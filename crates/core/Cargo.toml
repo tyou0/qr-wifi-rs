@@ -1,0 +1,21 @@
+[package]
+name = "qr-wifi-core"
+description = "Cross-platform core for QR Wi-Fi: OS-level Wi-Fi adapters, QR build/decode, and the IPC protocol shared by the CLI/TUI/GUI and the browser-extension host."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+qrcode = { workspace = true }
+image = { workspace = true }
+base64 = { workspace = true }
+rqrr = { workspace = true }
+
+[dev-dependencies]
+# Pure-logic unit tests live inside each module; no extra dev-deps required.
+serde_json = { workspace = true }

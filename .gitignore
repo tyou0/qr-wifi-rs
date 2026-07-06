@@ -1,0 +1,33 @@
+# build artifacts
+/target/
+**/target/
+dist/
+/dist/
+/frontend/dist/
+*.log
+
+# workspace env and local config
+.env
+.env.*
+!.env.example
+
+# rust/cargo leftovers
+**/*.rlib
+**/*.rmeta
+
+# editor / OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# editor/project config
+.vscode/
+.idea/
+
+# optional web tooling artifacts
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

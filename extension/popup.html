@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      body {
+        width: 320px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #090c10;
+        color: #f0f6fc;
+        padding: 1rem;
+        margin: 0;
+      }
+      h1 { font-size: 1rem; margin: 0 0 0.75rem; color: #73f7c4; }
+      button {
+        width: 100%;
+        background: #73f7c4;
+        color: #0d1117;
+        border: 0;
+        padding: 0.55rem;
+        border-radius: 8px;
+        font-weight: 700;
+        cursor: pointer;
+        margin-bottom: 0.5rem;
+      }
+      button.secondary { background: #161b22; color: #c9d1d9; border: 1px solid #30363d; }
+      img { display: block; margin: 0.5rem auto; background: #fff; border-radius: 8px; padding: 6px; width: 200px; height: 200px; object-fit: contain; }
+      code {
+        display: block;
+        font-size: 0.7rem;
+        color: #73f7c4;
+        background: #0d1117;
+        border: 1px solid #30363d;
+        border-radius: 6px;
+        padding: 0.4rem;
+        word-break: break-all;
+        white-space: pre-wrap;
+      }
+      textarea { width: 100%; box-sizing: border-box; background: #0d1117; color: #f0f6fc; border: 1px solid #30363d; border-radius: 8px; padding: 0.5rem; font-size: 0.75rem; }
+      .muted { color: #8b949e; font-size: 0.7rem; }
+      #status { font-size: 0.75rem; margin: 0.25rem 0 0.75rem; }
+    </style>
+  </head>
+  <body>
+    <h1>QR Wi-Fi RS</h1>
+    <div id="status" class="muted">Ready</div>
+
+    <button id="share">Share current Wi-Fi</button>
+    <div id="qr" hidden>
+      <img id="qr-image" alt="QR code" />
+      <code id="payload"></code>
+    </div>
+
+    <hr style="border: 0; border-top: 1px solid #21262d; margin: 0.75rem 0;" />
+    <p class="muted">Connect from a scanned/copied payload:</p>
+    <textarea id="payload-input" rows="2" placeholder="WIFI:T:WPA;S:...;P:...;;"></textarea>
+    <button id="connect" class="secondary" style="margin-top:0.5rem">Connect</button>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

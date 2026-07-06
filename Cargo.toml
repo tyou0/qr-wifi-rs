@@ -1,0 +1,66 @@
+# QR Wi-Fi RS
+#
+# Virtual workspace manifest. Every binary and the shared core live as their own
+# crate so the responsibilities stay clean and each piece can be built/tested
+# independently. See README.md for the full layout.
+
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/cli",
+    "crates/tui",
+    "crates/host",
+    "src-tauri",
+]
+default-members = [
+    "crates/core",
+    "crates/cli",
+    "crates/tui",
+    "crates/host",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+# Minimum Supported Rust Version. Bump only when a newer feature is actually needed.
+rust-version = "1.74"
+license = "MIT"
+authors = ["Tom You <dev@thetomyou.com>"]
+repository = "https://gitea.thetomyou.com/mistercorea/qr_wifi_rs"
+keywords = ["wifi", "qr", "qr-code", "tauri", "cross-platform"]
+categories = ["command-line-utilities", "networking", "os"]
+
+[workspace.dependencies]
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+thiserror = "2"
+
+# QR encode/decode
+qrcode = "0.14"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+base64 = "0.22"
+rqrr = "0.8"
+
+# CLI / TUI
+clap = { version = "4", features = ["derive"] }
+ratatui = "0.29"
+crossterm = "0.28"
+
+# Desktop GUI
+tauri = { version = "2", features = [] }
+tauri-build = { version = "2", features = [] }
+
+# Internal
+qr-wifi-core = { path = "crates/core" }
+qr-wifi-tui = { path = "crates/tui" }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

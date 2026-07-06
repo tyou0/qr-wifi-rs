@@ -1,0 +1,20 @@
+[package]
+name = "qr-wifi-tui"
+description = "Interactive menu-driven terminal UI for QR Wi-Fi (also used as the default mode of the CLI)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+name = "qr_wifi_tui"
+path = "src/lib.rs"
+
+[[bin]]
+name = "qr-wifi-tui"
+path = "src/main.rs"
+
+[dependencies]
+qr-wifi-core = { workspace = true }
+crossterm = { workspace = true }

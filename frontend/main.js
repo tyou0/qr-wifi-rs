@@ -1,0 +1,275 @@
+// QR Wi-Fi RS frontend. Vanilla JS — no framework, no bundler.
+// All heavy lifting happens in Rust via Tauri commands (window.__TAURI__).
+
+const tauri = window.__TAURI__ ?? {};
+const invoke = (tauri.core?.invoke ?? tauri.invoke)?.bind(tauri.core ?? tauri);
+
+if (!invoke) {
+  document.body.innerHTML =
+    '<p style="padding:2rem;font-family:sans-serif;color:#ff6b7a">' +
+    "Tauri bridge unavailable. Run this UI through `cargo tauri dev`.</p>";
+}
+
+const $ = (selector) => {
+  const el = document.querySelector(selector);
+  if (!el) throw new Error(`Missing element: ${selector}`);
+  return el;
+};
+
+const output = $("#output");
+const status = $("#status");
+const networkList = $("#network-list");
+const networkSearch = $("#network-search");
+const securityInput = $("#custom-security");
+const passwordGroup = $("#password-group");
+
+const qrModal = $("#qr-modal");
+const qrImage = $("#qr-image");
+const modalDesc = $("#modal-desc");
+const modalPayload = $("#modal-payload");
+const modalOverlay = document.querySelector(".modal-overlay");
+
+let allNetworks = [];
+let scanStream = null;
+let scanTimer = null;
+let isDecoding = false;
+const scanCanvas = document.createElement("canvas");
+const scanCtx = scanCanvas.getContext("2d", { willReadFrequently: true });
+
+function setStatus(message, kind = "idle") {
+  status.textContent = message;
+  status.dataset.kind = kind;
+}
+function print(text) {
+  output.textContent = text;
+}
+
+async function showQr(result, description) {
+  qrImage.src = `data:image/png;base64,${result.png_base64}`;
+  modalDesc.textContent = description ?? result.payload;
+  // Show the raw WIFI: payload string at the bottom of the modal.
+  modalPayload.textContent = result.payload;
+  qrModal.classList.remove("hidden");
+}
+function hideQr() {
+  qrModal.classList.add("hidden");
+}
+
+$("#close-modal").addEventListener("click", hideQr);
+modalOverlay.addEventListener("click", hideQr);
+$("#copy-payload").addEventListener("click", async () => {
+  const text = modalPayload.textContent ?? "";
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    setStatus("Payload copied", "success");
+  } catch {
+    setStatus("Could not copy payload", "error");
+  }
+});
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") hideQr();
+});
+
+$("#clear-output").addEventListener("click", () => print("Generated status/logs will appear here."));
+
+// Tabs
+document.querySelectorAll(".tab-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const tab = btn.getAttribute("data-tab");
+    document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+    document.querySelectorAll(".tab-pane").forEach((p) => p.classList.remove("active"));
+    btn.classList.add("active");
+    $(`#tab-${tab}`).classList.add("active");
+    if (tab !== "connect") stopScanning();
+  });
+});
+
+securityInput.addEventListener("change", () => {
+  const open = securityInput.value === "nopass";
+  passwordGroup.classList.toggle("hidden", open);
+});
+
+function fuzzyMatch(text, query) {
+  const t = text.toLowerCase();
+  let idx = 0;
+  for (let i = 0; i < t.length && idx < query.length; i += 1) {
+    if (t[i] === query[idx].toLowerCase()) idx += 1;
+  }
+  return idx === query.length;
+}
+function renderNetworks(networks) {
+  networkList.innerHTML = "";
+  if (networks.length === 0) {
+    networkList.textContent = "No networks found.";
+    return;
+  }
+  for (const network of networks) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "network-card";
+    button.textContent = network.active ? `* ${network.ssid}` : network.ssid;
+    button.addEventListener("click", async () => {
+      setStatus(`Building QR for ${network.ssid}...`, "loading");
+      try {
+        const credentials = await invoke("get_credentials", { ssid: network.ssid });
+        const result = await invoke("share_custom", { credentials });
+        await showQr(result, `SSID: ${credentials.ssid} · ${credentials.security}${credentials.hidden ? " (Hidden)" : ""}`);
+        print(`QR for ${network.ssid}.`);
+        setStatus("Done", "success");
+      } catch (error) {
+        handleError(error);
+      }
+    });
+    networkList.append(button);
+  }
+}
+networkSearch.addEventListener("input", () => {
+  const query = networkSearch.value.trim();
+  renderNetworks(query ? allNetworks.filter((n) => fuzzyMatch(n.ssid, query)) : allNetworks);
+});
+
+$("#share-current").addEventListener("click", async () => {
+  setStatus("Detecting current Wi-Fi...", "loading");
+  try {
+    const result = await invoke("share_current");
+    await showQr(result);
+    print(`QR for current network.`);
+    setStatus("Done", "success");
+  } catch (error) {
+    handleError(error);
+  }
+});
+
+async function refreshNetworks() {
+  setStatus("Loading networks...", "loading");
+  try {
+    networkSearch.value = "";
+    allNetworks = await invoke("list_networks");
+    renderNetworks(allNetworks);
+    setStatus(`${allNetworks.length} network(s) loaded`, "success");
+  } catch (error) {
+    handleError(error, true);
+  }
+}
+$("#refresh-networks").addEventListener("click", refreshNetworks);
+
+$("#custom-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  setStatus("Generating custom QR...", "loading");
+  const ssid = $("#custom-ssid").value.trim();
+  const security = securityInput.value;
+  const password = $("#custom-password").value;
+  const hidden = $("#custom-hidden").checked;
+  if (!ssid) {
+    setStatus("SSID is required", "error");
+    return;
+  }
+  const credentials = { ssid, security, hidden };
+  if (security !== "nopass" && password) credentials.password = password;
+  try {
+    const result = await invoke("share_custom", { credentials });
+    await showQr(result, `SSID: ${ssid} · ${security}${hidden ? " (Hidden)" : ""}`);
+    print(`Custom QR for ${ssid}.`);
+    setStatus("Done", "success");
+  } catch (error) {
+    handleError(error);
+  }
+});
+
+// Camera scanning: capture a frame, send the PNG to Rust for QR decoding.
+async function startScanning() {
+  print("Initializing camera...");
+  setStatus("Accessing camera", "loading");
+  try {
+    scanStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } },
+    });
+    const video = $("#scan-video");
+    video.srcObject = scanStream;
+    await video.play();
+    $("#scan-camera").classList.add("hidden");
+    $("#stop-scan").classList.remove("hidden");
+    $("#scanner-container").classList.remove("hidden");
+    setStatus("Scanning for QR code", "loading");
+    print("Point camera at a Wi-Fi QR code...");
+    scheduleNextScan();
+  } catch (error) {
+    print(`Camera access failed: ${error.message ?? error}`);
+    setStatus("Camera error", "error");
+    stopScanning();
+  }
+}
+function stopScanning() {
+  if (scanTimer) {
+    clearTimeout(scanTimer);
+    scanTimer = null;
+  }
+  isDecoding = false;
+  if (scanStream) {
+    scanStream.getTracks().forEach((track) => track.stop());
+    scanStream = null;
+  }
+  const video = $("#scan-video");
+  if (video) video.srcObject = null;
+  const start = document.querySelector("#scan-camera");
+  const stop = document.querySelector("#stop-scan");
+  const container = document.querySelector("#scanner-container");
+  if (start) start.classList.remove("hidden");
+  if (stop) stop.classList.add("hidden");
+  if (container) container.classList.add("hidden");
+}
+function scheduleNextScan() {
+  // Self-rescheduling: only queue the next capture once the previous decode
+  // round-trip finishes, so frames never pile up or race.
+  scanTimer = setTimeout(captureAndDecode, 400);
+}
+
+async function captureAndDecode() {
+  scanTimer = null;
+  const video = $("#scan-video");
+  if (!scanStream || video.paused || video.ended) {
+    if (scanStream) scheduleNextScan();
+    return;
+  }
+  if (isDecoding || video.readyState < video.HAVE_ENOUGH_DATA) {
+    scheduleNextScan();
+    return;
+  }
+  isDecoding = true;
+  // Downscale to keep the encode/decode cheap; JPEG is much lighter than PNG
+  // for a camera frame.
+  const w = 360;
+  const h = Math.max(1, Math.round((video.videoHeight / video.videoWidth) * w));
+  scanCanvas.width = w;
+  scanCanvas.height = h;
+  scanCtx.drawImage(video, 0, 0, w, h);
+  const dataUrl = scanCanvas.toDataURL("image/jpeg", 0.85);
+  const base64 = dataUrl.slice("data:image/jpeg;base64,".length);
+  try {
+    const credentials = await invoke("decode_qr", { imageBase64: base64 });
+    isDecoding = false;
+    stopScanning();
+    print(`Scanned: ${credentials.ssid}`);
+    setStatus(`Connecting to ${credentials.ssid}...`, "loading");
+    await invoke("connect_network", { credentials });
+    print(`Connected to ${credentials.ssid}.`);
+    setStatus("Connected", "success");
+  } catch {
+    // No QR in this frame yet — keep scanning.
+    isDecoding = false;
+    scheduleNextScan();
+  }
+}
+$("#scan-camera").addEventListener("click", startScanning);
+$("#stop-scan").addEventListener("click", stopScanning);
+
+function handleError(error, inList = false) {
+  const message = typeof error === "string" ? error : error?.message ?? String(error);
+  print(message);
+  setStatus(message, "error");
+  if (inList) networkList.textContent = message;
+}
+
+setStatus("Ready", "idle");
+void refreshNetworks().catch(() => undefined);

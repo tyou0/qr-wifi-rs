@@ -1,0 +1,14 @@
+# Keep dependencies fresh. Dependabot opens PRs to bump Cargo crates and the
+# GitHub Actions used by CI, so security/bugfix releases are not missed.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

@@ -1,0 +1,20 @@
+[package]
+name = "qr-wifi-gui"
+description = "Tauri desktop GUI for QR Wi-Fi."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[build-dependencies]
+tauri-build = { workspace = true }
+
+[dependencies]
+tauri = { workspace = true }
+qr-wifi-core = { workspace = true }
+serde = { workspace = true }
+
+[features]
+# Used for production builds / when no dev server is set. DO NOT REMOVE.
+custom-protocol = ["tauri/custom-protocol"]

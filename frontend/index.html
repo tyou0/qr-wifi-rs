@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QR Wi-Fi RS</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-container">
+      <header class="header">
+        <div class="brand">
+          <span class="eyebrow">Tauri · Rust</span>
+          <h1>QR Wi-Fi RS</h1>
+        </div>
+        <div id="status" class="status-badge" data-kind="idle">Ready</div>
+      </header>
+
+      <nav class="tab-nav">
+        <button class="tab-btn active" data-tab="share">Share</button>
+        <button class="tab-btn" data-tab="custom">Custom</button>
+        <button class="tab-btn" data-tab="connect">Connect</button>
+      </nav>
+
+      <div class="tab-content">
+        <section id="tab-share" class="tab-pane active">
+          <button id="share-current" class="primary-btn">Share current Wi-Fi</button>
+          <div class="list-section">
+            <div class="section-header">
+              <h2>OS Wi-Fi Networks</h2>
+              <button id="refresh-networks" class="icon-btn" title="Refresh list">↻</button>
+            </div>
+            <input id="network-search" class="search-input" placeholder="Type to search networks..." />
+            <div id="network-list" class="network-list scrollable">Loading networks...</div>
+          </div>
+        </section>
+
+        <section id="tab-custom" class="tab-pane">
+          <form id="custom-form" class="custom-form">
+            <div class="form-group">
+              <label for="custom-ssid">SSID</label>
+              <input id="custom-ssid" required placeholder="e.g. Guest Network" />
+            </div>
+            <div class="form-group">
+              <label for="custom-security">Security</label>
+              <select id="custom-security">
+                <option value="WPA">WPA / WPA2 / WPA3 (generic)</option>
+                <option value="WPA2">WPA2</option>
+                <option value="WPA3">WPA3</option>
+                <option value="WEP">WEP</option>
+                <option value="nopass">None (Unsecured)</option>
+              </select>
+            </div>
+            <div class="form-group" id="password-group">
+              <label for="custom-password">Password</label>
+              <input id="custom-password" type="password" placeholder="network password" />
+            </div>
+            <div class="form-group checkbox">
+              <input id="custom-hidden" type="checkbox" />
+              <label for="custom-hidden">Hidden network</label>
+            </div>
+            <button type="submit" class="primary-btn">Generate Custom QR</button>
+          </form>
+        </section>
+
+        <section id="tab-connect" class="tab-pane">
+          <div class="connect-main">
+            <p class="description">Scan a Wi-Fi QR code with your camera to connect instantly.</p>
+            <button id="scan-camera" class="primary-btn">Start Scanning</button>
+            <button id="stop-scan" class="secondary-btn hidden">Stop Scanning</button>
+            <div id="scanner-container" class="scanner-container hidden">
+              <video id="scan-video" playsinline></video>
+              <div class="scanner-laser"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <section class="output-section">
+        <div class="section-header">
+          <h2>Console</h2>
+          <button id="clear-output" class="text-btn">Clear</button>
+        </div>
+        <div class="output-viewport">
+          <pre id="output">Generated status/logs will appear here.</pre>
+        </div>
+      </section>
+    </main>
+
+    <!-- QR modal: image + description + raw payload string at the bottom -->
+    <div id="qr-modal" class="modal hidden">
+      <div class="modal-overlay"></div>
+      <div class="modal-content">
+        <header class="modal-header">
+          <h2>Wi-Fi QR Code</h2>
+          <button id="close-modal" class="close-btn" title="Close">&times;</button>
+        </header>
+        <div class="modal-body">
+          <img id="qr-image" alt="Wi-Fi QR code" />
+          <p id="modal-desc"></p>
+          <div class="payload-section">
+            <div class="payload-header">
+              <span>QR Payload</span>
+              <button id="copy-payload" class="text-btn">Copy</button>
+            </div>
+            <code id="modal-payload" class="payload-text"></code>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="main.js"></script>
+  </body>
+</html>
