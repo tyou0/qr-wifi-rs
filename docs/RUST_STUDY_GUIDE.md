@@ -133,7 +133,8 @@ qr_wifi_rs/
 ├── Cargo.toml              workspace root (virtual manifest)
 ├── crates/
 │   ├── core/   qr-wifi-core   shared LIBRARY: types, WIFI: payload,
-│   │                          QR encode/decode, OS Wi-Fi adapters, IPC protocol
+│   │                          QR encode/decode, OS adapters, feature service,
+│   │                          IPC protocol
 │   ├── cli/    qr-wifi        CLI (flags; no flags → menu)
 │   ├── tui/    qr-wifi-tui    menu + built-in fuzzy finder (lib + bin)
 │   └── host/   qr-wifi-host   Chrome/Firefox Native Messaging host
@@ -149,9 +150,9 @@ logic lives in `qr-wifi-core`** and every binary is a thin frontend that calls
 into it. Consequences:
 
 - The CLI, TUI, GUI, and host can never drift — there's literally one
-  `current_ssid()`, one `build_payload()`, one IPC `handle_request()`.
-- `core` has no I/O UI, so it's trivially unit-testable (38+ tests, no terminal,
-  no network).
+  `current_credentials()`, one `share_current()`, one `connect_payload()`.
+- `core` has no UI I/O, so it's trivially unit-testable (no terminal, no
+  network).
 - Adding a 5th frontend (e.g. a web API) costs ~one small binary.
 
 **Analogy**: this is the "library + multiple executables" pattern you'd write in
@@ -211,6 +212,23 @@ extension just talks JSON. One protocol, reused; no logic duplicated.
 Tauri gives a native desktop window with a webview. To honor "everything in
 Rust," all logic stays in Rust commands; the frontend is plain HTML/CSS/JS (no
 TypeScript, no bundler) that just calls `invoke('command_name', { ... })`.
+
+### Feature study map
+
+Use this map when learning or adding a feature:
+
+| User feature | Shared Rust entry point | Frontends |
+| --- | --- | --- |
+| Share current connection | `service::share_current(adapter)` | CLI, TUI, GUI, extension host |
+| Share a different SSID | `service::share_ssid(adapter, ssid)` | CLI, TUI, extension via `get_credentials` + `share_custom` |
+| Custom QR by input | `service::share_custom(&credentials)` | CLI, TUI, GUI, extension |
+| Connect from pasted payload | `service::connect_payload(adapter, payload)` | CLI/TUI/host; GUI uses parsed credentials |
+| Connect from QR image | `service::decode_qr_base64()` / `service::decode_qr_path()` then `connect_credentials()` | CLI image path, GUI camera/image, extension image file |
+| Browser IPC | `ipc::handle_request(request, adapter)` delegates to `service` | Chrome/Firefox Native Messaging |
+
+Rule: if a feature needs OS Wi-Fi, payload parsing, or QR generation, put the
+behavior in `crates/core/src/service.rs` first, then make each UI a thin caller.
+That is the maintainability boundary.
 
 ---
 
@@ -336,11 +354,12 @@ first when exploring a file.
 4. `crates/core/src/platform/mod.rs` — the `WifiAdapter` trait + factory.
 5. `crates/core/src/platform/macos.rs` — multi-method SSID detection (the
    "why so many fallbacks" file).
-6. `crates/core/src/ipc.rs` — the request/response protocol shared by the host.
-7. `crates/cli/src/main.rs` — how a frontend turns flags into core calls.
-8. `crates/tui/src/lib.rs` + `crates/tui/src/fuzzy.rs` — the menu and the
+6. `crates/core/src/service.rs` — feature workflows shared by every UI.
+7. `crates/core/src/ipc.rs` — the request/response protocol shared by the host.
+8. `crates/cli/src/main.rs` — how a frontend turns flags into core calls.
+9. `crates/tui/src/lib.rs` + `crates/tui/src/fuzzy.rs` — the menu and the
    built-in fuzzy finder (terminal raw-mode + RAII cleanup).
-9. `src-tauri/src/main.rs` — Tauri commands as another thin frontend.
+10. `src-tauri/src/main.rs` — Tauri commands as another thin frontend.
 
 ---
 

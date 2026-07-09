@@ -13,19 +13,26 @@ mod fuzzy;
 use std::io::{self, BufRead, Write};
 
 use qr_wifi_core::{
-    build_payload, decode_image_path, parse_payload, to_unicode, WifiAdapter, WifiCredentials,
-    WifiNetwork, WifiSecurity,
+    build_payload, connect_credentials, connect_payload, decode_qr_path, networks,
+    share_current as core_share_current, share_custom as core_share_custom,
+    share_ssid as core_share_ssid, to_unicode, WifiAdapter, WifiCredentials, WifiNetwork,
+    WifiSecurity,
 };
+
+/// Print a raw `WIFI:` payload as terminal QR art.
+pub fn print_payload(payload: &str) -> Result<(), String> {
+    let art = to_unicode(payload).map_err(|e| e.to_string())?;
+    println!("\n{art}");
+    println!("Payload: {payload}");
+    Ok(())
+}
 
 /// Print a QR code as terminal art followed by the raw `WIFI:` payload string.
 ///
 /// Shared by the interactive menu and the one-shot CLI actions.
 pub fn print_qr(credentials: &WifiCredentials) -> Result<(), String> {
     let payload = build_payload(credentials);
-    let art = to_unicode(&payload).map_err(|e| e.to_string())?;
-    println!("\n{art}");
-    println!("Payload: {payload}");
-    Ok(())
+    print_payload(&payload)
 }
 
 /// Run the interactive main menu until the user quits.
@@ -57,16 +64,16 @@ pub fn run_menu(adapter: &dyn WifiAdapter) {
 }
 
 fn share_current(adapter: &dyn WifiAdapter) {
-    match current_credentials(adapter) {
-        Ok(creds) => {
-            let _ = print_qr(&creds);
+    match core_share_current(adapter) {
+        Ok(share) => {
+            let _ = print_payload(&share.payload);
         }
-        Err(message) => println!("\n{message}"),
+        Err(error) => println!("\n{error}"),
     }
 }
 
 fn share_by_ssid(adapter: &dyn WifiAdapter) {
-    let networks = match adapter.list_networks() {
+    let networks = match networks(adapter) {
         Ok(networks) => networks,
         Err(error) => {
             println!("\nCould not list networks: {error}");
@@ -81,9 +88,9 @@ fn share_by_ssid(adapter: &dyn WifiAdapter) {
         println!("\nCancelled.");
         return;
     };
-    match adapter.credentials(&ssid) {
-        Ok(creds) => {
-            let _ = print_qr(&creds);
+    match core_share_ssid(adapter, &ssid) {
+        Ok(share) => {
+            let _ = print_payload(&share.payload);
         }
         Err(error) => println!("\nCould not read credentials for {ssid}: {error}"),
     }
@@ -121,7 +128,12 @@ fn custom_qr() {
         password,
         hidden,
     };
-    let _ = print_qr(&creds);
+    match core_share_custom(&creds) {
+        Ok(share) => {
+            let _ = print_payload(&share.payload);
+        }
+        Err(error) => println!("\nCould not build QR: {error}"),
+    }
 }
 
 fn scan_connect(adapter: &dyn WifiAdapter) {
@@ -135,8 +147,8 @@ fn scan_connect(adapter: &dyn WifiAdapter) {
                 println!("\nCancelled.");
                 return;
             }
-            match decode_image_path(std::path::Path::new(&path)) {
-                Ok(payload) => connect_from_payload(adapter, &payload),
+            match decode_qr_path(std::path::Path::new(&path)) {
+                Ok(creds) => connect_from_credentials(adapter, &creds),
                 Err(error) => println!("\nDecode failed: {error}"),
             }
         }
@@ -152,25 +164,19 @@ fn scan_connect(adapter: &dyn WifiAdapter) {
     }
 }
 
-fn connect_from_payload(adapter: &dyn WifiAdapter, payload: &str) {
-    println!("\nPayload: {payload}");
-    let creds = match parse_payload(payload) {
-        Ok(creds) => creds,
-        Err(error) => {
-            println!("Invalid payload: {error}");
-            return;
-        }
-    };
-    match adapter.connect(&creds) {
+fn connect_from_credentials(adapter: &dyn WifiAdapter, creds: &WifiCredentials) {
+    match connect_credentials(adapter, creds) {
         Ok(()) => println!("Connected to {}.", creds.ssid),
         Err(error) => println!("Connect failed: {error}"),
     }
 }
 
-/// Resolve credentials for the active network, mapping OS errors to messages.
-fn current_credentials(adapter: &dyn WifiAdapter) -> Result<WifiCredentials, String> {
-    let ssid = adapter.current_ssid().map_err(|e| e.to_string())?;
-    adapter.credentials(&ssid).map_err(|e| e.to_string())
+fn connect_from_payload(adapter: &dyn WifiAdapter, payload: &str) {
+    println!("\nPayload: {payload}");
+    match connect_payload(adapter, payload) {
+        Ok(creds) => println!("Connected to {}.", creds.ssid),
+        Err(error) => println!("Connect failed: {error}"),
+    }
 }
 
 /// Open the built-in fuzzy finder over the network list and return the chosen

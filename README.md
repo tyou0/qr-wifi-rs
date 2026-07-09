@@ -41,6 +41,36 @@ through `qr-wifi-core`.
   `networksetup`/`ipconfig`/`security` (macOS), `nmcli` (Linux, NetworkManager),
   `netsh` (Windows).
 
+## Install
+
+Fast paths:
+
+```sh
+# Rust package manager install (CLI/TUI/native host)
+cargo install --path crates/cli
+cargo install --path crates/tui
+cargo install --path crates/host
+
+# Desktop setup installer/bundle for the current OS
+cargo install tauri-cli --version "^2"
+cargo tauri build
+
+# Browser native-host registration (macOS/Linux)
+scripts/install-native-host.sh --chrome-extension-id <chrome-extension-id>
+```
+
+What this gives you:
+
+- `qr-wifi` and `qr-wifi-tui` on `~/.cargo/bin`.
+- Tauri GUI installer artifacts from `cargo tauri build`
+  (macOS dmg/app, Linux deb/AppImage, Windows msi/nsis depending on Tauri target).
+- Chrome/Chromium/Firefox Native Messaging manifests pointing at
+  `~/.local/bin/qr-wifi-host` via `scripts/install-native-host.sh`.
+
+For published releases, the same crates are intended to be installable with
+`cargo install qr-wifi-cli`, `cargo install qr-wifi-tui`, and
+`cargo install qr-wifi-host`; until then, use `--path`.
+
 ## Build
 
 `crates/core`, `crates/cli`, `crates/tui`, and `crates/host` are the workspace
@@ -74,7 +104,7 @@ Build artifacts land in `target/debug/` (or `target/release/`):
 | `qr-wifi-host`    | `qr-wifi-host` | Browser Native Messaging host   |
 | `qr-wifi-gui`     | `qr-wifi-gui`  | Tauri desktop app (run via Tauri CLI) |
 
-Install the CLI/TUI/host onto your `PATH` (`~/.cargo/bin`):
+Same commands, repeated for copy/paste:
 
 ```sh
 cargo install --path crates/cli
@@ -215,6 +245,21 @@ the image and the raw `WIFI:` payload string at the bottom.
 
 The extension shares/connects to Wi-Fi by talking to the `qr-wifi-host` binary
 over [Native Messaging](https://developer.chrome.com/docs/apps/nativeMessaging).
+The popup exposes the same feature set as the other frontends: share current
+connection, share a different SSID, create a custom QR, connect from a pasted
+`WIFI:` payload, or connect from a QR image file.
+
+Fast macOS/Linux setup:
+
+```sh
+# Chrome/Chromium: load extension/ first, copy its extension ID, then:
+scripts/install-native-host.sh --chrome-extension-id <chrome-extension-id>
+
+# Firefox only works without the Chrome ID because manifest.json fixes the add-on ID.
+scripts/install-native-host.sh
+```
+
+Manual setup:
 
 1. Build the host and put it somewhere stable:
 
@@ -235,8 +280,7 @@ over [Native Messaging](https://developer.chrome.com/docs/apps/nativeMessaging).
      `HKCU\Software\Google\Chrome\NativeMessagingHosts\com.thetomyou.qrwifi`
 
 3. Load `extension/` as an unpacked extension (Chrome) or temporary add-on
-   (Firefox). The popup's "Share current Wi-Fi" returns the QR; "Connect"
-   connects the machine from a pasted `WIFI:` payload.
+   (Firefox).
 
 ### IPC protocol
 

@@ -13,11 +13,9 @@ use std::io::{ErrorKind, Read, Write};
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::Result;
-use crate::payload::parse_payload;
 use crate::platform::WifiAdapter;
-use crate::qr::{credentials_to_qr, decode_image_base64};
 use crate::types::{WifiCredentials, WifiNetwork};
+use crate::{service, Result};
 
 /// Native Messaging caps messages at 1 MiB; reject anything larger before
 /// allocating to avoid memory-exhaustion from a malformed length header.
@@ -138,7 +136,7 @@ pub fn handle_request(request: &Request, adapter: &dyn WifiAdapter) -> Response 
             Ok(ssid) => Response::ok(ResponseData::Ssid { ssid }),
             Err(e) => Response::error(e.to_string()),
         },
-        Request::ListNetworks => match adapter.list_networks() {
+        Request::ListNetworks => match service::networks(adapter) {
             Ok(networks) => Response::ok(ResponseData::Networks { networks }),
             Err(e) => Response::error(e.to_string()),
         },
@@ -146,45 +144,36 @@ pub fn handle_request(request: &Request, adapter: &dyn WifiAdapter) -> Response 
             Ok(credentials) => Response::ok(ResponseData::Credentials { credentials }),
             Err(e) => Response::error(e.to_string()),
         },
-        Request::ShareCurrent => share(current_credentials(adapter)),
-        Request::ShareCustom { credentials } => share(Ok(credentials.clone())),
-        Request::Connect { credentials } => match adapter.connect(credentials) {
-            Ok(()) => Response::ok(ResponseData::Connected),
+        Request::ShareCurrent => match service::share_current(adapter) {
+            Ok(share) => qr_response(share),
             Err(e) => Response::error(e.to_string()),
         },
-        Request::ConnectPayload { payload } => match parse_payload(payload) {
-            Ok(credentials) => match adapter.connect(&credentials) {
+        Request::ShareCustom { credentials } => match service::share_custom(credentials) {
+            Ok(share) => qr_response(share),
+            Err(e) => Response::error(e.to_string()),
+        },
+        Request::Connect { credentials } => {
+            match service::connect_credentials(adapter, credentials) {
                 Ok(()) => Response::ok(ResponseData::Connected),
                 Err(e) => Response::error(e.to_string()),
-            },
+            }
+        }
+        Request::ConnectPayload { payload } => match service::connect_payload(adapter, payload) {
+            Ok(_) => Response::ok(ResponseData::Connected),
             Err(e) => Response::error(e.to_string()),
         },
-        Request::DecodeQr { image_base64 } => match decode_image_base64(image_base64) {
-            Ok(payload) => match parse_payload(&payload) {
-                Ok(credentials) => Response::ok(ResponseData::Decoded { credentials }),
-                Err(e) => Response::error(e.to_string()),
-            },
+        Request::DecodeQr { image_base64 } => match service::decode_qr_base64(image_base64) {
+            Ok(credentials) => Response::ok(ResponseData::Decoded { credentials }),
             Err(e) => Response::error(e.to_string()),
         },
     }
 }
 
-/// Build a QR response (payload + PNG) for a resolved set of credentials,
-/// reusing the shared [`qr_wifi_core::qr::credentials_to_qr`] helper.
-fn share(credentials: Result<WifiCredentials>) -> Response {
-    match credentials.and_then(|c| credentials_to_qr(&c)) {
-        Ok((payload, png_base64)) => Response::ok(ResponseData::Qr {
-            payload,
-            png_base64,
-        }),
-        Err(e) => Response::error(e.to_string()),
-    }
-}
-
-/// Resolve credentials for the active network (shared by `share_current`).
-fn current_credentials(adapter: &dyn WifiAdapter) -> Result<WifiCredentials> {
-    let ssid = adapter.current_ssid()?;
-    adapter.credentials(&ssid)
+fn qr_response(share: service::QrShare) -> Response {
+    Response::ok(ResponseData::Qr {
+        payload: share.payload,
+        png_base64: share.png_base64,
+    })
 }
 
 /// Read one length-prefixed Native Messaging message.

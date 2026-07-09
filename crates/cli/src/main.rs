@@ -4,14 +4,15 @@
 //! into the shared interactive menu (`qr_wifi_tui::run_menu`). Run
 //! `qr-wifi --help` for the full flag list.
 
-use std::path::Path;
 use std::process::ExitCode;
 
 use clap::Parser;
 use qr_wifi_core::{
-    decode_image_path, default_adapter, parse_payload, WifiAdapter, WifiCredentials, WifiSecurity,
+    connect_credentials, decode_qr_path, default_adapter, networks,
+    share_current as core_share_current, share_custom as core_share_custom,
+    share_ssid as core_share_ssid, WifiAdapter, WifiCredentials, WifiSecurity,
 };
-use qr_wifi_tui::print_qr;
+use qr_wifi_tui::print_payload;
 
 #[derive(Parser)]
 #[command(
@@ -100,7 +101,7 @@ fn dispatch(cli: &Cli, adapter: &dyn WifiAdapter) -> Result<(), String> {
 }
 
 fn list_networks(adapter: &dyn WifiAdapter) -> Result<(), String> {
-    let networks = adapter.list_networks().map_err(|e| e.to_string())?;
+    let networks = networks(adapter).map_err(|e| e.to_string())?;
     if networks.is_empty() {
         println!("No Wi-Fi networks found.");
         return Ok(());
@@ -151,14 +152,13 @@ fn truncate_for_column(s: &str, width: usize) -> String {
 }
 
 fn share_current(adapter: &dyn WifiAdapter) -> Result<(), String> {
-    let ssid = adapter.current_ssid().map_err(|e| e.to_string())?;
-    let creds = adapter.credentials(&ssid).map_err(|e| e.to_string())?;
-    print_qr(&creds)
+    let share = core_share_current(adapter).map_err(|e| e.to_string())?;
+    print_payload(&share.payload)
 }
 
 fn share_ssid(adapter: &dyn WifiAdapter, ssid: &str) -> Result<(), String> {
-    let creds = adapter.credentials(ssid).map_err(|e| e.to_string())?;
-    print_qr(&creds)
+    let share = core_share_ssid(adapter, ssid).map_err(|e| e.to_string())?;
+    print_payload(&share.payload)
 }
 
 fn build_custom(
@@ -173,7 +173,8 @@ fn build_custom(
         password: password.map(str::to_string).filter(|p| !p.is_empty()),
         hidden,
     };
-    print_qr(&creds)
+    let share = core_share_custom(&creds).map_err(|e| e.to_string())?;
+    print_payload(&share.payload)
 }
 
 fn scan_connect(adapter: &dyn WifiAdapter, image: Option<&str>) -> Result<(), String> {
@@ -181,10 +182,9 @@ fn scan_connect(adapter: &dyn WifiAdapter, image: Option<&str>) -> Result<(), St
         "--scan/--connect requires --image <path>. Live camera scanning is available in the GUI."
             .to_string()
     })?;
-    let payload = decode_image_path(Path::new(path)).map_err(|e| e.to_string())?;
-    println!("Scanned: {payload}");
-    let creds = parse_payload(&payload).map_err(|e| e.to_string())?;
-    adapter.connect(&creds).map_err(|e| e.to_string())?;
+    let creds = decode_qr_path(std::path::Path::new(path)).map_err(|e| e.to_string())?;
+    println!("Scanned: {}", creds.ssid);
+    connect_credentials(adapter, &creds).map_err(|e| e.to_string())?;
     println!("Connected to {}.", creds.ssid);
     Ok(())
 }

@@ -8,18 +8,9 @@
 //! the GUI shares one implementation with the CLI, TUI, and the browser-host.
 
 use qr_wifi_core::{
-    credentials_to_qr, decode_image_base64, default_adapter, parse_payload, WifiCredentials,
-    WifiNetwork,
+    decode_qr_base64, default_adapter, networks, share_current as core_share_current,
+    share_custom as core_share_custom, WifiCredentials, WifiNetwork,
 };
-use serde::Serialize;
-
-/// QR result returned to the frontend: the matrix image (base64 PNG) plus the
-/// raw `WIFI:` payload string shown beneath it.
-#[derive(Debug, Serialize)]
-struct QrResult {
-    payload: String,
-    png_base64: String,
-}
 
 fn to_message(error: impl std::fmt::Display) -> String {
     error.to_string()
@@ -32,7 +23,7 @@ fn get_active_ssid() -> Result<String, String> {
 
 #[tauri::command]
 fn list_networks() -> Result<Vec<WifiNetwork>, String> {
-    default_adapter().list_networks().map_err(to_message)
+    networks(default_adapter().as_ref()).map_err(to_message)
 }
 
 #[tauri::command]
@@ -41,35 +32,24 @@ fn get_credentials(ssid: String) -> Result<WifiCredentials, String> {
 }
 
 #[tauri::command]
-fn share_current() -> Result<QrResult, String> {
+fn share_current() -> Result<qr_wifi_core::QrShare, String> {
     let adapter = default_adapter();
-    let ssid = adapter.current_ssid().map_err(to_message)?;
-    let credentials = adapter.credentials(&ssid).map_err(to_message)?;
-    render(credentials)
+    core_share_current(adapter.as_ref()).map_err(to_message)
 }
 
 #[tauri::command]
-fn share_custom(credentials: WifiCredentials) -> Result<QrResult, String> {
-    render(credentials)
-}
-
-fn render(credentials: WifiCredentials) -> Result<QrResult, String> {
-    let (payload, png_base64) = credentials_to_qr(&credentials).map_err(to_message)?;
-    Ok(QrResult {
-        payload,
-        png_base64,
-    })
+fn share_custom(credentials: WifiCredentials) -> Result<qr_wifi_core::QrShare, String> {
+    core_share_custom(&credentials).map_err(to_message)
 }
 
 #[tauri::command]
 fn connect_network(credentials: WifiCredentials) -> Result<(), String> {
-    default_adapter().connect(&credentials).map_err(to_message)
+    qr_wifi_core::connect_credentials(default_adapter().as_ref(), &credentials).map_err(to_message)
 }
 
 #[tauri::command]
 fn decode_qr(image_base64: String) -> Result<WifiCredentials, String> {
-    let payload = decode_image_base64(&image_base64).map_err(to_message)?;
-    parse_payload(&payload).map_err(to_message)
+    decode_qr_base64(&image_base64).map_err(to_message)
 }
 
 fn main() {

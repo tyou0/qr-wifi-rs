@@ -3,58 +3,142 @@
   <head>
     <meta charset="UTF-8" />
     <style>
-      body {
-        width: 320px;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        background: #090c10;
-        color: #f0f6fc;
-        padding: 1rem;
-        margin: 0;
+      :root {
+        color-scheme: dark;
+        --bg: #080b10;
+        --panel: #0f141d;
+        --soft: #171e2a;
+        --line: #273142;
+        --text: #eef5ff;
+        --muted: #8f9caf;
+        --accent: #72f7c4;
+        --accent-2: #87a8ff;
+        --danger: #ff8f8f;
       }
-      h1 { font-size: 1rem; margin: 0 0 0.75rem; color: #73f7c4; }
+      * { box-sizing: border-box; }
+      body {
+        width: 380px;
+        margin: 0;
+        padding: 14px;
+        background: radial-gradient(circle at top, #122033 0, var(--bg) 44%);
+        color: var(--text);
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      h1 { margin: 0; font-size: 1rem; letter-spacing: 0.02em; }
+      h2 { margin: 0 0 8px; font-size: 0.82rem; color: var(--accent); }
+      .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+      .pill { color: var(--accent); border: 1px solid #2b735e; border-radius: 999px; padding: 3px 8px; font-size: 0.68rem; }
+      .tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 10px; }
+      .tab {
+        background: var(--soft);
+        color: var(--muted);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 7px 8px;
+        font-size: 0.72rem;
+      }
+      .tab.active { color: #06100c; background: var(--accent); border-color: var(--accent); }
+      .panel { display: none; background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--line); border-radius: 16px; padding: 12px; }
+      .panel.active { display: block; }
+      label { display: block; margin: 8px 0 4px; color: var(--muted); font-size: 0.72rem; }
+      input, select, textarea {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #0a0f16;
+        color: var(--text);
+        padding: 8px 9px;
+        font: inherit;
+        font-size: 0.78rem;
+      }
+      textarea { min-height: 58px; resize: vertical; }
       button {
         width: 100%;
-        background: #73f7c4;
-        color: #0d1117;
         border: 0;
-        padding: 0.55rem;
-        border-radius: 8px;
-        font-weight: 700;
+        border-radius: 10px;
+        margin-top: 9px;
+        padding: 9px;
+        background: var(--accent);
+        color: #06100c;
+        font-weight: 800;
         cursor: pointer;
-        margin-bottom: 0.5rem;
       }
-      button.secondary { background: #161b22; color: #c9d1d9; border: 1px solid #30363d; }
-      img { display: block; margin: 0.5rem auto; background: #fff; border-radius: 8px; padding: 6px; width: 200px; height: 200px; object-fit: contain; }
-      code {
-        display: block;
-        font-size: 0.7rem;
-        color: #73f7c4;
-        background: #0d1117;
-        border: 1px solid #30363d;
-        border-radius: 6px;
-        padding: 0.4rem;
-        word-break: break-all;
-        white-space: pre-wrap;
-      }
-      textarea { width: 100%; box-sizing: border-box; background: #0d1117; color: #f0f6fc; border: 1px solid #30363d; border-radius: 8px; padding: 0.5rem; font-size: 0.75rem; }
-      .muted { color: #8b949e; font-size: 0.7rem; }
-      #status { font-size: 0.75rem; margin: 0.25rem 0 0.75rem; }
+      button.secondary { background: var(--soft); color: var(--text); border: 1px solid var(--line); }
+      button.inline { margin-top: 0; }
+      .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      .check { display: flex; gap: 8px; align-items: center; margin-top: 8px; color: var(--muted); font-size: 0.76rem; }
+      .check input { width: auto; }
+      #status { min-height: 18px; margin: 0 0 10px; color: var(--muted); font-size: 0.74rem; }
+      #status.error { color: var(--danger); }
+      #qr { margin-top: 12px; background: #0a0f16; border: 1px solid var(--line); border-radius: 14px; padding: 10px; }
+      #qr-image { display: block; width: 210px; height: 210px; object-fit: contain; margin: 0 auto 8px; background: white; padding: 7px; border-radius: 12px; }
+      code { display: block; color: var(--accent); word-break: break-all; white-space: pre-wrap; font-size: 0.68rem; }
+      .hint { margin: 7px 0 0; color: var(--muted); font-size: 0.68rem; line-height: 1.35; }
     </style>
   </head>
   <body>
-    <h1>QR Wi-Fi RS</h1>
-    <div id="status" class="muted">Ready</div>
+    <div class="top">
+      <h1>QR Wi-Fi RS</h1>
+      <span class="pill">native host</span>
+    </div>
+    <div id="status">Ready</div>
 
-    <button id="share">Share current Wi-Fi</button>
-    <div id="qr" hidden>
-      <img id="qr-image" alt="QR code" />
-      <code id="payload"></code>
+    <div class="tabs" role="tablist" aria-label="QR Wi-Fi actions">
+      <button class="tab active" data-tab="share" type="button">Share</button>
+      <button class="tab" data-tab="custom" type="button">Custom</button>
+      <button class="tab" data-tab="connect" type="button">Connect</button>
     </div>
 
-    <hr style="border: 0; border-top: 1px solid #21262d; margin: 0.75rem 0;" />
-    <p class="muted">Connect from a scanned/copied payload:</p>
-    <textarea id="payload-input" rows="2" placeholder="WIFI:T:WPA;S:...;P:...;;"></textarea>
-    <button id="connect" class="secondary" style="margin-top:0.5rem">Connect</button>
+    <section id="share" class="panel active">
+      <h2>Share saved Wi-Fi</h2>
+      <button id="share-current" type="button">Share current connection</button>
+      <div class="row">
+        <button id="load-networks" class="secondary inline" type="button">Load SSIDs</button>
+        <button id="share-selected" class="secondary inline" type="button">Share selected</button>
+      </div>
+      <label for="ssid-list">Saved / visible SSIDs</label>
+      <select id="ssid-list"><option value="">Load networks first</option></select>
+      <p class="hint">Browser extension asks `qr-wifi-host`; host reads OS credentials through shared Rust core.</p>
+    </section>
+
+    <section id="custom" class="panel">
+      <h2>Create custom QR</h2>
+      <label for="custom-ssid">SSID</label>
+      <input id="custom-ssid" autocomplete="off" placeholder="Guest Wi-Fi" />
+      <div class="row">
+        <div>
+          <label for="custom-security">Security</label>
+          <select id="custom-security">
+            <option value="WPA">WPA</option>
+            <option value="WPA2">WPA2</option>
+            <option value="WPA3">WPA3</option>
+            <option value="WEP">WEP</option>
+            <option value="nopass">Open / nopass</option>
+          </select>
+        </div>
+        <div>
+          <label for="custom-password">Password</label>
+          <input id="custom-password" type="password" autocomplete="off" placeholder="optional" />
+        </div>
+      </div>
+      <label class="check"><input id="custom-hidden" type="checkbox" /> Hidden network</label>
+      <button id="share-custom" type="button">Create QR</button>
+    </section>
+
+    <section id="connect" class="panel">
+      <h2>Connect from QR</h2>
+      <label for="payload-input">Paste WIFI: payload</label>
+      <textarea id="payload-input" placeholder="WIFI:T:WPA;S:...;P:...;;"></textarea>
+      <button id="connect-payload" type="button">Connect from payload</button>
+      <label for="qr-file">Or choose QR image</label>
+      <input id="qr-file" type="file" accept="image/png,image/jpeg,image/webp,image/*" />
+      <button id="connect-image" class="secondary" type="button">Decode image and connect</button>
+    </section>
+
+    <div id="qr" hidden>
+      <img id="qr-image" alt="Generated Wi-Fi QR code" />
+      <code id="payload"></code>
+    </div>
 
     <script src="popup.js"></script>
   </body>
