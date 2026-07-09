@@ -2,8 +2,9 @@
 //!
 //! This is intentionally **not** a full-screen dashboard: each screen is a
 //! short text menu that reads from stdin, performs an action, prints the
-//! result, then returns to the main menu. Network selection uses the built-in
-//! interactive fuzzy finder in [`fuzzy`].
+//! result, then returns to the main menu. Network selection uses a built-in
+//! interactive fuzzy finder (falls back to a numbered list when `fzf` is not
+//! available).
 //!
 //! The CLI (`qr-wifi`) calls [`run_menu`] when launched with no flags, so the
 //! menu is shared between `qr-wifi` and `qr-wifi-tui`.

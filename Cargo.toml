@@ -55,8 +55,8 @@ tauri = { version = "2", features = [] }
 tauri-build = { version = "2", features = [] }
 
 # Internal
-qr-wifi-core = { path = "crates/core" }
-qr-wifi-tui = { path = "crates/tui" }
+qr-wifi-core = { path = "crates/core", version = "0.1" }
+qr-wifi-tui = { path = "crates/tui", version = "0.1" }
 
 [profile.release]
 codegen-units = 1

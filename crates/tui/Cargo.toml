@@ -6,6 +6,9 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
+readme = "../../README.md"
+keywords = ["wifi", "qr-code", "tui", "terminal", "cross-platform"]
+categories = ["command-line-utilities", "command-line-interface"]
 
 [lib]
 name = "qr_wifi_tui"

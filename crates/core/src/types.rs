@@ -243,4 +243,68 @@ mod tests {
         assert!(WifiSecurity::Wpa3.requires_password());
         assert!(WifiSecurity::Wep.requires_password());
     }
+
+    #[test]
+    fn sort_empty_list_does_not_panic() {
+        let mut networks: Vec<WifiNetwork> = vec![];
+        sort_networks(&mut networks);
+        assert!(networks.is_empty());
+    }
+
+    #[test]
+    fn sort_single_item_remains_unchanged() {
+        let mut networks = vec![WifiNetwork {
+            ssid: "Only".into(),
+            security: WifiSecurity::Wpa,
+            signal: None,
+            active: false,
+        }];
+        sort_networks(&mut networks);
+        assert_eq!(networks[0].ssid, "Only");
+    }
+
+    #[test]
+    fn sort_multiple_active_keeps_first() {
+        let mut networks = vec![
+            WifiNetwork {
+                ssid: "First".into(),
+                security: WifiSecurity::Wpa,
+                signal: None,
+                active: true,
+            },
+            WifiNetwork {
+                ssid: "Second".into(),
+                security: WifiSecurity::Wpa,
+                signal: None,
+                active: true,
+            },
+        ];
+        sort_networks(&mut networks);
+        // When multiple are active, they're sorted alphabetically among themselves
+        let names: Vec<&str> = networks.iter().map(|n| n.ssid.as_str()).collect();
+        assert_eq!(names, vec!["First", "Second"]);
+    }
+
+    #[test]
+    fn credentials_with_hidden_flag() {
+        let creds = WifiCredentials::new("HiddenNet", WifiSecurity::Wpa2)
+            .with_password("secret")
+            .hidden(true);
+        assert!(creds.hidden);
+        assert_eq!(creds.password, Some("secret".to_string()));
+    }
+
+    #[test]
+    fn credentials_with_none_password_for_open() {
+        let creds = WifiCredentials::new("OpenNet", WifiSecurity::Nopass);
+        assert!(creds.password.is_none());
+        assert!(!creds.security.requires_password());
+    }
+
+    #[test]
+    fn wifi_network_is_send_and_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<WifiNetwork>();
+        assert_send_sync::<WifiCredentials>();
+    }
 }

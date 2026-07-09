@@ -381,3 +381,16 @@ cargo tree                       # show dependency graph
 
 Happy hacking — and when in doubt about a type or method, `cargo doc --open` or
 docs.rs usually answers it immediately.
+
+---
+
+## 6. Deep-dive documentation
+
+For more detailed explanations of specific topics, see:
+
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** — Detailed architecture breakdown, design philosophy, and data flow diagrams.
+- **[PLATFORM_ADAPTERS.md](PLATFORM_ADAPTERS.md)** — How macOS, Linux, and Windows Wi-Fi adapters are implemented and tested.
+- **[IPC_PROTOCOL.md](IPC_PROTOCOL.md)** — Native Messaging protocol specification for browser extension communication.
+- **[TESTING.md](TESTING.md)** — Testing strategies, the FakeAdapter pattern, and how to test OS-specific code.
+
+These documents expand on the concepts covered here and provide implementation details for each major subsystem.

@@ -64,3 +64,70 @@ pub enum CoreError {
 /// Convenience alias so call sites read as `Result<T>` (with [`CoreError`] as
 /// the default error).
 pub type Result<T, E = CoreError> = std::result::Result<T, E>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn error_display_provides_helpful_message() {
+        let err = CoreError::NetworkNotFound("TestNetwork".to_string());
+        assert!(err.to_string().contains("TestNetwork"));
+        assert!(err.to_string().contains("not found"));
+    }
+
+    #[test]
+    fn command_error_includes_command_name() {
+        let err = CoreError::Command {
+            command: "networksetup -getairportnetwork".to_string(),
+            message: "Invalid argument".to_string(),
+        };
+        let display = err.to_string();
+        assert!(display.contains("networksetup"));
+        assert!(display.contains("Invalid argument"));
+    }
+
+    #[test]
+    fn payload_error_includes_detail() {
+        let err = CoreError::Payload("Invalid character at position 5".to_string());
+        assert!(err.to_string().contains("payload"));
+        assert!(err.to_string().contains("position 5"));
+    }
+
+    #[test]
+    fn no_active_network_has_clear_message() {
+        let err = CoreError::NoActiveNetwork;
+        assert!(err.to_string().contains("active"));
+        assert!(err.to_string().contains("Wi-Fi"));
+    }
+
+    #[test]
+    fn errors_are_send_and_sync() {
+        // This test confirms CoreError can be used across threads
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<CoreError>();
+    }
+
+    #[test]
+    fn io_error_converts_from_std_io() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
+        let core_err: CoreError = io_err.into();
+        assert!(matches!(core_err, CoreError::Io(_)));
+        assert!(core_err.to_string().contains("file not found"));
+    }
+
+    #[test]
+    fn json_error_converts_from_serde() {
+        let json_err = serde_json::from_str::<serde_json::Value>("invalid json").unwrap_err();
+        let core_err: CoreError = json_err.into();
+        assert!(matches!(core_err, CoreError::Json(_)));
+    }
+
+    #[test]
+    fn base64_error_converts_from_base64() {
+        use base64::DecodeError;
+        let b64_err = DecodeError::InvalidByte(0, b'!');
+        let core_err: CoreError = b64_err.into();
+        assert!(matches!(core_err, CoreError::Base64(_)));
+    }
+}
