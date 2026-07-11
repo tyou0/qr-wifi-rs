@@ -8,10 +8,17 @@ set -eu
 
 host_name="com.thetomyou.qrwifi"
 install_dir="${QR_WIFI_INSTALL_DIR:-$HOME/.local/bin}"
-host_path="$install_dir/qr-wifi-host"
+host_path_set=false
+if [ -n "${QR_WIFI_HOST_PATH:-}" ]; then
+  host_path="$QR_WIFI_HOST_PATH"
+  host_path_set=true
+else
+  host_path="$install_dir/qr-wifi-host"
+fi
 chrome_id="${QR_WIFI_CHROME_EXTENSION_ID:-}"
 firefox_id="qr-wifi-rs@thetomyou.com"
 uninstall=false
+skip_build=false
 
 # ANSI colors
 reset='\033[0m'
@@ -35,12 +42,17 @@ for Chrome/Chromium/Firefox browsers.
 OPTIONS:
   --chrome-extension-id ID    Chrome/Chromium extension ID (required for those browsers)
   --install-dir DIR           Installation directory (default: ~/.local/bin)
+  --host-path PATH            Existing qr-wifi-host path to register
+  --skip-build                Do not build/copy; register --host-path as-is
   --uninstall                 Remove installed binary and manifests
   -h, --help                  Show this help message
 
 EXAMPLES:
   # Install (macOS/Linux)
   scripts/install-native-host.sh --chrome-extension-idabcdefghijklmnopqrstuvwxyz
+
+  # Register a Homebrew-installed host
+  qr-wifi-install-native-host --skip-build --host-path "$(brew --prefix qr-wifi-rs)/bin/qr-wifi-host" --chrome-extension-id ABC...XYZ
 
   # Install (Windows)
   scripts/install-native-host.sh --chrome-extension-id ABC...XYZ --install-dir "%APPDATA%\qr-wifi-rs"
@@ -76,8 +88,19 @@ while [ "$#" -gt 0 ]; do
       ;;
     --install-dir)
       install_dir="${2:?missing install directory}"
-      host_path="$install_dir/qr-wifi-host"
+      if [ "$host_path_set" = false ]; then
+        host_path="$install_dir/qr-wifi-host"
+      fi
       shift 2
+      ;;
+    --host-path)
+      host_path="${2:?missing host path}"
+      host_path_set=true
+      shift 2
+      ;;
+    --skip-build)
+      skip_build=true
+      shift
       ;;
     --uninstall)
       uninstall=true
@@ -164,17 +187,25 @@ fi
 # Install
 header "Installing QR Wi-Fi RS Native Messaging host..."
 
-# Build the host binary
-info "Building qr-wifi-host..."
-cargo build --release -p qr-wifi-host
+if [ "$skip_build" = true ]; then
+  if [ ! -x "$host_path" ]; then
+    echo "Host binary is not executable: $host_path" >&2
+    exit 1
+  fi
+  info "Using existing host: $host_path"
+else
+  # Build the host binary
+  info "Building qr-wifi-host..."
+  cargo build --release -p qr-wifi-host
 
-# Create install directory
-mkdir -p "$install_dir"
+  # Create install directory
+  mkdir -p "$install_dir"
 
-# Copy binary
-info "Installing to: $host_path"
-cp target/release/qr-wifi-host "$host_path"
-chmod 755 "$host_path"
+  # Copy binary
+  info "Installing to: $host_path"
+  cp target/release/qr-wifi-host "$host_path"
+  chmod 755 "$host_path"
+fi
 
 # Write manifests based on platform
 case "$platform" in

@@ -67,6 +67,9 @@ frontends.
 Fast paths:
 
 ```sh
+# Homebrew HEAD install (CLI/TUI/native host)
+brew install --HEAD ./Formula/qr-wifi-rs.rb
+
 # Rust package manager install (CLI/TUI/native host)
 cargo install --path crates/cli
 cargo install --path crates/tui
@@ -91,6 +94,46 @@ What this gives you:
 For published releases, the same crates are intended to be installable with
 `cargo install qr-wifi-cli`, `cargo install qr-wifi-tui`, and
 `cargo install qr-wifi-host`; until then, use `--path`.
+
+### Homebrew
+
+The repo includes a Homebrew formula at `Formula/qr-wifi-rs.rb`.
+
+From this repo or a tap checkout:
+
+```sh
+brew install --HEAD ./Formula/qr-wifi-rs.rb
+```
+
+After publishing the formula in a tap:
+
+```sh
+brew tap thetomyou/qr-wifi-rs
+brew install --HEAD qr-wifi-rs
+```
+
+This installs:
+
+- `qr-wifi`
+- `qr-wifi-tui`
+- `qr-wifi-host`
+- `qr-wifi-install-native-host`
+
+Register the browser Native Messaging host after installing the browser
+extension:
+
+```sh
+qr-wifi-install-native-host --skip-build --host-path "$(brew --prefix qr-wifi-rs)/bin/qr-wifi-host" --chrome-extension-id <chrome-extension-id>
+```
+
+Firefox can omit the Chrome extension ID:
+
+```sh
+qr-wifi-install-native-host --skip-build --host-path "$(brew --prefix qr-wifi-rs)/bin/qr-wifi-host"
+```
+
+Stable `brew install qr-wifi-rs` requires a published release tarball and real
+SHA256 in the formula. Until then, use `--HEAD`.
 
 ## Build
 
@@ -141,6 +184,17 @@ cargo fmt                           # format
 cargo fmt --all -- --check          # verify formatting
 cargo clippy --workspace --all-targets
 ```
+
+## CI/CD
+
+CI/CD is configured in:
+
+- `.github/workflows/ci.yml`
+- `.github/workflows/release.yml`
+- `.gitea/workflows/ci.yml`
+
+See [`docs/CI_CD.md`](docs/CI_CD.md) for release tags, generated artifacts, and
+Homebrew release notes.
 
 ## Run
 
