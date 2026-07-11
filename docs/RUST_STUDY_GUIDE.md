@@ -388,9 +388,35 @@ docs.rs usually answers it immediately.
 
 For more detailed explanations of specific topics, see:
 
+- **[LEARNING_PATH.md](LEARNING_PATH.md)** — Chapter-by-chapter Rust curriculum using this repo as the textbook.
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — Detailed architecture breakdown, design philosophy, and data flow diagrams.
 - **[PLATFORM_ADAPTERS.md](PLATFORM_ADAPTERS.md)** — How macOS, Linux, and Windows Wi-Fi adapters are implemented and tested.
 - **[IPC_PROTOCOL.md](IPC_PROTOCOL.md)** — Native Messaging protocol specification for browser extension communication.
 - **[TESTING.md](TESTING.md)** — Testing strategies, the FakeAdapter pattern, and how to test OS-specific code.
 
 These documents expand on the concepts covered here and provide implementation details for each major subsystem.
+
+---
+
+## 7. How to study this repo
+
+Use the code in this order:
+
+1. Read one small module.
+2. Run or write one focused test.
+3. Run one example.
+4. Trace which frontend calls the same core function.
+
+Do not start with the GUI or browser extension. They are useful, but they hide
+the Rust lessons behind UI details. Start in `qr-wifi-core`, then move outward.
+
+The main study loop:
+
+```sh
+cargo test -p qr-wifi-core payload
+cargo run -p qr-wifi-core --example parse_payload
+cargo run -p qr-wifi-core --example service_contract
+```
+
+If you can explain why those commands work, you understand the core design of
+the project.

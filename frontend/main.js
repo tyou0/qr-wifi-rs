@@ -44,6 +44,24 @@ function print(text) {
   output.textContent = text;
 }
 
+function cameraErrorMessage(error) {
+  const name = error?.name ?? "";
+  const message = error?.message ?? String(error);
+  if (!navigator.mediaDevices?.getUserMedia) {
+    return "Camera API unavailable in this webview.";
+  }
+  if (name === "NotAllowedError" || name === "SecurityError") {
+    return "Camera permission denied. Allow camera access for QR Wi-Fi RS in macOS Privacy settings.";
+  }
+  if (name === "NotFoundError" || name === "OverconstrainedError") {
+    return "No usable camera found.";
+  }
+  if (name === "NotReadableError") {
+    return "Camera is already in use by another app.";
+  }
+  return `Camera access failed: ${message}`;
+}
+
 async function showQr(result, description) {
   qrImage.src = `data:image/png;base64,${result.png_base64}`;
   modalDesc.textContent = description ?? result.payload;
@@ -195,8 +213,9 @@ async function startScanning() {
     print("Point camera at a Wi-Fi QR code...");
     scheduleNextScan();
   } catch (error) {
-    print(`Camera access failed: ${error.message ?? error}`);
-    setStatus("Camera error", "error");
+    const message = cameraErrorMessage(error);
+    print(message);
+    setStatus(message, "error");
     stopScanning();
   }
 }

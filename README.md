@@ -32,6 +32,27 @@ qr_wifi_rs/
 All three binaries (CLI, TUI, host) and the Tauri GUI share one implementation
 through `qr-wifi-core`.
 
+## Learn Rust with this repo
+
+This codebase is also structured as a practical Rust study project. Start here:
+
+- [`docs/RUST_STUDY_GUIDE.md`](docs/RUST_STUDY_GUIDE.md) - Rust concepts mapped to this repo.
+- [`docs/LEARNING_PATH.md`](docs/LEARNING_PATH.md) - chapter-by-chapter curriculum, exercises, and checkpoints.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - why the shared-core design works.
+- [`docs/TESTING.md`](docs/TESTING.md) - fake adapters, pure unit tests, and platform parsing tests.
+
+Runnable learning examples live in `crates/core/examples/`:
+
+```sh
+cargo run -p qr-wifi-core --example parse_payload
+cargo run -p qr-wifi-core --example build_qr_png -- "Guest" "s3cret" out.png
+cargo run -p qr-wifi-core --example service_contract
+```
+
+The learning rule for this repo: add behavior to `qr-wifi-core` first, test it
+there, then expose it through CLI, TUI, GUI, and browser extension as thin
+frontends.
+
 ## Prerequisites
 
 - **Rust toolchain** (stable, via <https://rustup.rs>): `rustc` + `cargo`.
