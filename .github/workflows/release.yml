@@ -64,7 +64,7 @@ jobs:
           tar -czf "dist/$package.tar.gz" -C dist "$package"
 
       - name: Upload CLI/TUI/host artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: qr-wifi-rs-${{ matrix.target }}
           path: dist/*.tar.gz
@@ -139,7 +139,7 @@ jobs:
           esac
 
       - name: Upload desktop artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: qr-wifi-rs-desktop-${{ matrix.target }}
           path: dist/*
@@ -162,7 +162,7 @@ jobs:
           mv dist/*.zip dist/qr-wifi-rs-browser-extension-unsigned.zip
 
       - name: Upload extension artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: qr-wifi-rs-browser-extension
           path: dist/*.zip
