@@ -13,11 +13,24 @@ use crate::error::{CoreError, Result};
 /// A non-zero exit status becomes a [`CoreError::Command`] that includes the
 /// trimmed stderr so callers can surface a useful message.
 pub(crate) fn run(program: &str, args: &[&str]) -> Result<String> {
+    run_with_label(program, args, display_invocation(program, args))
+}
+
+/// Run a command whose arguments may contain credentials.
+///
+/// The arguments still reach the OS process, but they are never copied into an
+/// error returned to a frontend or log.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub(crate) fn run_redacted(program: &str, args: &[&str]) -> Result<String> {
+    run_with_label(program, args, format!("{program} [arguments redacted]"))
+}
+
+fn run_with_label(program: &str, args: &[&str], command_label: String) -> Result<String> {
     let output = Command::new(program)
         .args(args)
         .output()
         .map_err(|e| CoreError::Command {
-            command: program.to_string(),
+            command: command_label.clone(),
             message: e.to_string(),
         })?;
 
@@ -26,7 +39,7 @@ pub(crate) fn run(program: &str, args: &[&str]) -> Result<String> {
     } else {
         let message = String::from_utf8_lossy(&output.stderr).trim().to_string();
         Err(CoreError::Command {
-            command: display_invocation(program, args),
+            command: command_label,
             message,
         })
     }
@@ -37,6 +50,7 @@ pub(crate) fn run(program: &str, args: &[&str]) -> Result<String> {
 /// Returns [`None`] if the program cannot be spawned at all. A non-zero exit
 /// still yields stdout (many Wi-Fi tools print useful output before failing),
 /// so callers can parse defensively.
+#[cfg(target_os = "macos")]
 pub(crate) fn try_capture(program: &str, args: &[&str]) -> Option<String> {
     let output = Command::new(program).args(args).output().ok()?;
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
@@ -69,8 +83,16 @@ mod tests {
         assert!(out.contains("hello"));
     }
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn try_capture_missing_program_is_none() {
         assert!(try_capture("this-program-does-not-exist-xyz", &[]).is_none());
+    }
+
+    #[test]
+    fn redacted_command_label_never_contains_arguments() {
+        let label = format!("{} [arguments redacted]", "networksetup");
+        assert_eq!(label, "networksetup [arguments redacted]");
+        assert!(!label.contains("super-secret-password"));
     }
 }

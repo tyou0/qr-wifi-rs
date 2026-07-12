@@ -7,7 +7,7 @@
 use std::io::Cursor;
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use image::{DynamicImage, ImageFormat, Luma};
+use image::{DynamicImage, ImageFormat, ImageReader, Limits, Luma};
 use qrcode::render::unicode::Dense1x2;
 use qrcode::QrCode;
 
@@ -17,6 +17,11 @@ use crate::types::WifiCredentials;
 
 /// Pixels per QR module in the generated PNG.
 const MODULE_SCALE: u32 = 8;
+
+/// Limits applied before decoding untrusted camera or extension images.
+const MAX_IMAGE_BYTES: u64 = 12 * 1024 * 1024;
+const MAX_IMAGE_DIMENSION: u32 = 8192;
+const MAX_IMAGE_ALLOC: u64 = 128 * 1024 * 1024;
 
 /// Build a QR matrix for the given payload.
 fn build_matrix(payload: &str) -> Result<QrCode> {
@@ -72,6 +77,11 @@ pub fn to_unicode(payload: &str) -> Result<String> {
 
 /// Decode the first QR code found in an image.
 pub fn decode_image(img: DynamicImage) -> Result<String> {
+    if img.width() > MAX_IMAGE_DIMENSION || img.height() > MAX_IMAGE_DIMENSION {
+        return Err(CoreError::QrDecode(format!(
+            "image dimensions exceed {MAX_IMAGE_DIMENSION}x{MAX_IMAGE_DIMENSION}"
+        )));
+    }
     let mut prepared = rqrr::PreparedImage::prepare(img.to_luma8());
     let grids = prepared.detect_grids();
     let (_meta, content) = grids
@@ -86,16 +96,44 @@ pub fn decode_image(img: DynamicImage) -> Result<String> {
 /// Decode a QR code from base64-encoded image bytes (e.g. a PNG captured by a
 /// webcam and sent over IPC).
 pub fn decode_image_base64(image_base64: &str) -> Result<String> {
+    let estimated_bytes = (image_base64.len() / 4).saturating_mul(3) as u64;
+    ensure_image_size(estimated_bytes)?;
     let bytes = STANDARD.decode(image_base64)?;
-    let img = image::load_from_memory(&bytes).map_err(|e| CoreError::QrDecode(e.to_string()))?;
-    decode_image(img)
+    decode_image_bytes(&bytes)
 }
 
 /// Decode a QR code from an image file on disk.
 pub fn decode_image_path(path: &std::path::Path) -> Result<String> {
+    ensure_image_size(std::fs::metadata(path)?.len())?;
     let bytes = std::fs::read(path)?;
-    let img = image::load_from_memory(&bytes).map_err(|e| CoreError::QrDecode(e.to_string()))?;
-    decode_image(img)
+    decode_image_bytes(&bytes)
+}
+
+fn decode_image_bytes(bytes: &[u8]) -> Result<String> {
+    ensure_image_size(bytes.len() as u64)?;
+
+    let mut reader = ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|e| CoreError::QrDecode(e.to_string()))?;
+    let mut limits = Limits::default();
+    limits.max_image_width = Some(MAX_IMAGE_DIMENSION);
+    limits.max_image_height = Some(MAX_IMAGE_DIMENSION);
+    limits.max_alloc = Some(MAX_IMAGE_ALLOC);
+    reader.limits(limits);
+
+    let image = reader
+        .decode()
+        .map_err(|e| CoreError::QrDecode(e.to_string()))?;
+    decode_image(image)
+}
+
+fn ensure_image_size(size: u64) -> Result<()> {
+    if size > MAX_IMAGE_BYTES {
+        return Err(CoreError::QrDecode(format!(
+            "encoded image is {size} bytes; maximum is {MAX_IMAGE_BYTES}"
+        )));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -145,5 +183,18 @@ mod tests {
         let img = image::load_from_memory(&png).unwrap();
         let decoded = decode_image(img).unwrap();
         assert_eq!(decoded, PAYLOAD);
+    }
+
+    #[test]
+    fn rejects_images_above_encoded_size_limit() {
+        let error = ensure_image_size(MAX_IMAGE_BYTES + 1).unwrap_err();
+        assert!(error.to_string().contains("maximum"));
+    }
+
+    #[test]
+    fn rejects_images_above_dimension_limit() {
+        let image = DynamicImage::new_luma8(MAX_IMAGE_DIMENSION + 1, 1);
+        let error = decode_image(image).unwrap_err();
+        assert!(error.to_string().contains("dimensions"));
     }
 }

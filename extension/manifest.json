@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "QR Wi-Fi RS",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Share or connect to Wi-Fi from the browser via the QR Wi-Fi RS native host.",
   "permissions": ["nativeMessaging"],
   "action": {
@@ -11,7 +11,10 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "qr-wifi-rs@thetomyou.com",
-      "strict_min_version": "115.0"
+      "strict_min_version": "115.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
     }
   }
 }

@@ -11,12 +11,20 @@ env:
 
 jobs:
   rust:
-    name: Rust checks (${{ matrix.os }})
+    name: Rust checks (${{ matrix.label }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            label: linux-x86_64
+          - os: windows-latest
+            label: windows-x86_64
+          - os: macos-latest
+            label: macos-arm64
+          - os: macos-15-intel
+            label: macos-x86_64
 
     steps:
       - name: Checkout
@@ -49,7 +57,7 @@ jobs:
         run: cargo check --locked -p qr-wifi-gui
 
   packaging:
-    name: Packaging metadata
+    name: Packaging and extension checks
     runs-on: ubuntu-latest
 
     steps:
@@ -61,5 +69,28 @@ jobs:
           ruby -c Formula/qr-wifi-rs.rb
           ruby -c scripts/homebrew-formula.rb
 
-      - name: Check native host installer syntax
-        run: sh -n scripts/install-native-host.sh
+      - name: Test native host installer
+        run: |
+          sh -n scripts/install-native-host.sh
+          sh -n scripts/test-install-native-host.sh
+          sh scripts/test-install-native-host.sh
+
+      - name: Lint Chrome and Firefox extension
+        run: npx --yes web-ext@8 lint --source-dir extension --warnings-as-errors
+
+  dependency-audit:
+    name: Rust dependency audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Audit dependencies
+        run: cargo audit

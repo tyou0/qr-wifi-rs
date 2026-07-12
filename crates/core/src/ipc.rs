@@ -17,9 +17,11 @@ use crate::platform::WifiAdapter;
 use crate::types::{WifiCredentials, WifiNetwork};
 use crate::{service, Result};
 
-/// Native Messaging caps messages at 1 MiB; reject anything larger before
-/// allocating to avoid memory-exhaustion from a malformed length header.
-const MAX_MESSAGE_BYTES: usize = 1 << 20;
+/// Chrome permits up to 64 MiB from an extension to a host and 1 MiB in the
+/// other direction. Use a smaller request ceiling that still accepts normal
+/// camera photos while bounding memory use.
+const MAX_REQUEST_BYTES: usize = 16 << 20;
+const MAX_RESPONSE_BYTES: usize = 1 << 20;
 
 /// A single request from a client (extension, CLI, GUI, ...).
 ///
@@ -190,9 +192,9 @@ pub fn read_message<R: Read>(reader: &mut R) -> Result<Option<Request>> {
     if length == 0 {
         return Ok(None);
     }
-    if length > MAX_MESSAGE_BYTES {
+    if length > MAX_REQUEST_BYTES {
         return Err(crate::error::CoreError::Payload(format!(
-            "native message too large: {length} bytes (max {MAX_MESSAGE_BYTES})"
+            "native request too large: {length} bytes (max {MAX_REQUEST_BYTES})"
         )));
     }
     let mut buffer = vec![0u8; length];
@@ -204,7 +206,13 @@ pub fn read_message<R: Read>(reader: &mut R) -> Result<Option<Request>> {
 /// Write one length-prefixed Native Messaging message.
 pub fn write_message<W: Write>(writer: &mut W, response: &Response) -> Result<()> {
     let json = serde_json::to_vec(response)?;
-    let length = u32::try_from(json.len()).unwrap_or(u32::MAX).to_le_bytes();
+    if json.len() > MAX_RESPONSE_BYTES {
+        return Err(crate::error::CoreError::Payload(format!(
+            "native response too large: {} bytes (max {MAX_RESPONSE_BYTES})",
+            json.len()
+        )));
+    }
+    let length = (json.len() as u32).to_le_bytes();
     writer.write_all(&length)?;
     writer.write_all(&json)?;
     writer.flush()?;
@@ -372,10 +380,18 @@ mod tests {
         // Regression for the host DoS fix: an attacker-controlled length header
         // above the Native Messaging ceiling must be rejected *before* we ever
         // allocate a buffer for it.
-        let oversize: u32 = (MAX_MESSAGE_BYTES + 1) as u32;
+        let oversize: u32 = (MAX_REQUEST_BYTES + 1) as u32;
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&oversize.to_le_bytes());
         let mut cursor = std::io::Cursor::new(bytes);
         assert!(read_message(&mut cursor).is_err());
+    }
+
+    #[test]
+    fn write_message_rejects_oversized_response() {
+        let response = Response::error("x".repeat(MAX_RESPONSE_BYTES));
+        let mut bytes = Vec::new();
+        assert!(write_message(&mut bytes, &response).is_err());
+        assert!(bytes.is_empty());
     }
 }

@@ -48,3 +48,5 @@ jobs:
           ruby -c Formula/qr-wifi-rs.rb
           ruby -c scripts/homebrew-formula.rb
           sh -n scripts/install-native-host.sh
+          sh -n scripts/test-install-native-host.sh
+          sh scripts/test-install-native-host.sh

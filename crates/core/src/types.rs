@@ -86,7 +86,7 @@ pub struct WifiNetwork {
 ///
 /// This is the central value type of the crate; build one with [`Self::new`]
 /// and the fluent `with_password` / `hidden` setters (a "builder" pattern).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WifiCredentials {
     /// The network's SSID (name).
     pub ssid: String,
@@ -97,6 +97,20 @@ pub struct WifiCredentials {
     pub password: Option<String>,
     /// `true` for hidden (non-broadcasting) networks.
     pub hidden: bool,
+}
+
+/// Keep passwords out of panic messages, debug logs, and test failures.
+/// Serialization remains unchanged because IPC must carry credentials to the
+/// explicitly authorized local frontend.
+impl std::fmt::Debug for WifiCredentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WifiCredentials")
+            .field("ssid", &self.ssid)
+            .field("security", &self.security)
+            .field("password", &self.password.as_ref().map(|_| "[REDACTED]"))
+            .field("hidden", &self.hidden)
+            .finish()
+    }
 }
 
 impl WifiCredentials {
@@ -306,5 +320,14 @@ mod tests {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<WifiNetwork>();
         assert_send_sync::<WifiCredentials>();
+    }
+
+    #[test]
+    fn credentials_debug_redacts_password() {
+        let credentials =
+            WifiCredentials::new("Home", WifiSecurity::Wpa2).with_password("super-secret-password");
+        let debug = format!("{credentials:?}");
+        assert!(debug.contains("[REDACTED]"));
+        assert!(!debug.contains("super-secret-password"));
     }
 }

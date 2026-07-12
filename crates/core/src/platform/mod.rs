@@ -15,7 +15,11 @@ mod windows;
 use crate::error::Result;
 use crate::types::{WifiCredentials, WifiNetwork};
 
-pub(crate) use command::{run, try_capture};
+pub(crate) use command::run;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub(crate) use command::run_redacted;
+#[cfg(target_os = "macos")]
+pub(crate) use command::try_capture;
 
 /// OS-level Wi-Fi operations used by every frontend (CLI/TUI/GUI/IPC).
 pub trait WifiAdapter: Send + Sync {

@@ -360,6 +360,9 @@ Learn:
 - Browser Native Messaging
 - JSON protocol boundaries
 - Keeping JS as presentation, not business logic
+- CSS custom properties as shared design tokens
+- Automatic dark mode with `prefers-color-scheme`
+- Accessible focus states and reduced-motion preferences
 
 Run:
 
@@ -373,9 +376,15 @@ Exercise:
 Pick one frontend action and trace the core function it reaches. If the frontend
 duplicates core logic, move that logic into `qr-wifi-core`.
 
+Then change one monochrome design token in `frontend/styles.css` and the matching
+token in `extension/popup.html`. Confirm that appearance changes without touching
+Rust behavior.
+
 Checkpoint:
 
 You can explain how CLI, TUI, GUI, Chrome, and Firefox share the same features.
+You can also explain why themes stay in each frontend while Wi-Fi rules stay in
+`qr-wifi-core`.
 
 ## Chapter 12: Packaging and install paths
 
@@ -437,3 +446,44 @@ When adding a feature:
 6. Update this learning path if the feature creates a new lesson.
 
 This keeps the repo maintainable and keeps the learning material honest.
+
+## Chapter 13: Security and release engineering
+
+Goal: learn how local applications protect secrets and prove cross-platform
+behavior before release.
+
+Read:
+
+- `docs/SECURITY.md`
+- `crates/core/src/platform/command.rs`
+- `crates/core/src/qr.rs`
+- `crates/host/tests/native_messaging.rs`
+- `scripts/install-native-host.sh`
+- `.github/workflows/ci.yml`
+
+Learn:
+
+- Trust boundaries and least privilege
+- Secret redaction without changing serialization
+- Resource limits for untrusted IPC and images
+- Process-level integration tests
+- Browser Native Messaging allowlists
+- CI test matrices and release artifacts
+- Difference between ad-hoc signing, trusted signing, and notarization
+
+Run:
+
+```sh
+cargo test --locked
+sh scripts/test-install-native-host.sh
+```
+
+Exercise:
+
+Choose one trust boundary from `docs/SECURITY.md`. Write a failing test for one
+abuse case, then implement the smallest protection that makes it pass.
+
+Checkpoint:
+
+You can explain which checks a VM can prove and why camera, Wi-Fi radio, and
+credential-store behavior still need real hardware.

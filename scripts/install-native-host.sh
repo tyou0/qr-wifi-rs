@@ -1,85 +1,81 @@
 #!/usr/bin/env sh
 set -eu
 
-# QR Wi-Fi RS Native Messaging Host Installer
-#
-# Builds qr-wifi-host, installs it, and registers Native Messaging manifests
-# for Chrome/Chromium/Firefox. Supports macOS, Linux, and Windows.
+# Install and register the QR Wi-Fi RS Native Messaging host.
+# Browser-specific manifests stay separate because Chrome uses
+# `allowed_origins` while Firefox uses `allowed_extensions`.
 
 host_name="com.thetomyou.qrwifi"
-install_dir="${QR_WIFI_INSTALL_DIR:-$HOME/.local/bin}"
-host_path_set=false
-if [ -n "${QR_WIFI_HOST_PATH:-}" ]; then
-  host_path="$QR_WIFI_HOST_PATH"
-  host_path_set=true
-else
-  host_path="$install_dir/qr-wifi-host"
-fi
-chrome_id="${QR_WIFI_CHROME_EXTENSION_ID:-}"
 firefox_id="qr-wifi-rs@thetomyou.com"
+chrome_id="${QR_WIFI_CHROME_EXTENSION_ID:-}"
 uninstall=false
 skip_build=false
+host_path_set=false
 
-# ANSI colors
 reset='\033[0m'
 bold='\033[1m'
-green='\033[92m'
-yellow='\033[93m'
 blue='\033[94m'
 
 info() { printf "${blue}%s${reset}\n" "$*"; }
-success() { printf "${green}%s${reset}\n" "$*"; }
-warn() { printf "${yellow}%s${reset}\n" "$*"; }
 header() { printf "\n${bold}%s${reset}\n" "$*"; }
-
-show_help() {
-  cat <<'EOF'
-Usage: scripts/install-native-host.sh [OPTIONS]
-
-Builds qr-wifi-host, installs it locally, and registers Native Messaging manifests
-for Chrome/Chromium/Firefox browsers.
-
-OPTIONS:
-  --chrome-extension-id ID    Chrome/Chromium extension ID (required for those browsers)
-  --install-dir DIR           Installation directory (default: ~/.local/bin)
-  --host-path PATH            Existing qr-wifi-host path to register
-  --skip-build                Do not build/copy; register --host-path as-is
-  --uninstall                 Remove installed binary and manifests
-  -h, --help                  Show this help message
-
-EXAMPLES:
-  # Install (macOS/Linux)
-  scripts/install-native-host.sh --chrome-extension-idabcdefghijklmnopqrstuvwxyz
-
-  # Register a Homebrew-installed host
-  qr-wifi-install-native-host --skip-build --host-path "$(brew --prefix qr-wifi-rs)/bin/qr-wifi-host" --chrome-extension-id ABC...XYZ
-
-  # Install (Windows)
-  scripts/install-native-host.sh --chrome-extension-id ABC...XYZ --install-dir "%APPDATA%\qr-wifi-rs"
-
-  # Uninstall
-  scripts/install-native-host.sh --uninstall
-
-CHROME EXTENSION ID:
-  Load 'extension/' as an unpacked extension first, then copy the extension ID
-  from chrome://extensions/ (the "ID" field near the extension name).
-
-  On Firefox, the ID is fixed (qr-wifi-rs@thetomyou.com) and doesn't need to be specified.
-EOF
-}
 
 detect_platform() {
   case "$(uname -s)" in
-    Darwin)  echo "macos" ;;
-    Linux)   echo "linux" ;;
+    Darwin) echo "macos" ;;
+    Linux) echo "linux" ;;
     MINGW*|MSYS*|CYGWIN*) echo "windows" ;;
     *) echo "unknown" ;;
   esac
 }
 
-platform="$(detect_platform)"
+platform="${QR_WIFI_PLATFORM:-$(detect_platform)}"
 
-# Parse arguments
+case "$platform" in
+  windows)
+    host_binary="qr-wifi-host.exe"
+    if [ -n "${LOCALAPPDATA:-}" ] && command -v cygpath >/dev/null 2>&1; then
+      default_install_dir="$(cygpath -u "$LOCALAPPDATA")/QR Wi-Fi RS"
+    else
+      default_install_dir="$HOME/.local/share/qr-wifi-rs"
+    fi
+    ;;
+  macos|linux)
+    host_binary="qr-wifi-host"
+    default_install_dir="$HOME/.local/bin"
+    ;;
+  *)
+    echo "Unsupported platform: $platform" >&2
+    exit 1
+    ;;
+esac
+
+install_dir="${QR_WIFI_INSTALL_DIR:-$default_install_dir}"
+if [ -n "${QR_WIFI_HOST_PATH:-}" ]; then
+  host_path="$QR_WIFI_HOST_PATH"
+  host_path_set=true
+else
+  host_path="$install_dir/$host_binary"
+fi
+
+show_help() {
+  cat <<'EOF'
+Usage: scripts/install-native-host.sh [OPTIONS]
+
+Build and install qr-wifi-host, then register browser Native Messaging manifests.
+
+OPTIONS:
+  --chrome-extension-id ID  Chrome/Chromium extension ID
+  --install-dir DIR         Installation directory
+  --host-path PATH          Existing qr-wifi-host path to register
+  --skip-build              Register an existing executable
+  --uninstall               Remove manifests and script-installed binary
+  -h, --help                Show help
+
+Firefox uses the fixed add-on ID qr-wifi-rs@thetomyou.com. Chrome registration
+is skipped unless --chrome-extension-id is supplied.
+EOF
+}
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --chrome-extension-id)
@@ -87,9 +83,9 @@ while [ "$#" -gt 0 ]; do
       shift 2
       ;;
     --install-dir)
-      install_dir="${2:?missing install directory}"
+      install_dir="${2:?missing installation directory}"
       if [ "$host_path_set" = false ]; then
-        host_path="$install_dir/qr-wifi-host"
+        host_path="$install_dir/$host_binary"
       fi
       shift 2
       ;;
@@ -118,202 +114,144 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-# Remove manifests and binary
-uninstall_host() {
-  header "Uninstalling QR Wi-Fi RS Native Messaging host..."
-
-  removed=0
-
+manifest_locations() {
   case "$platform" in
-    macos|linux)
-      chrome_dir="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts"
-      chromium_dir="$HOME/Library/Application Support/Chromium/NativeMessagingHosts"
-      firefox_dir="$HOME/Library/Application Support/Mozilla/NativeMessagingHosts"
-
-      if [ "$platform" = "linux" ]; then
-        chrome_dir="$HOME/.config/google-chrome/NativeMessagingHosts"
-        chromium_dir="$HOME/.config/chromium/NativeMessagingHosts"
-        firefox_dir="$HOME/.mozilla/native-messaging-hosts"
-      fi
-
-      for dir in "$chrome_dir" "$chromium_dir" "$firefox_dir"; do
-        manifest="$dir/$host_name.json"
-        if [ -f "$manifest" ]; then
-          rm -f "$manifest"
-          info "Removed: $manifest"
-          removed=$((removed + 1))
-        fi
-      done
-
-      if [ -f "$host_path" ]; then
-        rm -f "$host_path"
-        info "Removed: $host_path"
-        removed=$((removed + 1))
-      fi
+    macos)
+      chrome_manifest="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts/$host_name.json"
+      chromium_manifest="$HOME/Library/Application Support/Chromium/NativeMessagingHosts/$host_name.json"
+      firefox_manifest="$HOME/Library/Application Support/Mozilla/NativeMessagingHosts/$host_name.json"
+      ;;
+    linux)
+      chrome_manifest="$HOME/.config/google-chrome/NativeMessagingHosts/$host_name.json"
+      chromium_manifest="$HOME/.config/chromium/NativeMessagingHosts/$host_name.json"
+      firefox_manifest="$HOME/.mozilla/native-messaging-hosts/$host_name.json"
       ;;
     windows)
-      # Windows requires registry operations
-      if command -v reg >/dev/null 2>&1; then
-        reg_path="HKCU\Software\Google\Chrome\NativeMessagingHosts\$host_name"
-        if reg query "$reg_path" >/dev/null 2>&1; then
-          reg delete "$reg_path" /f >/dev/null 2>&1
-          info "Removed Chrome registry entry"
-          removed=$((removed + 1))
-        fi
-      fi
-
-      if [ -f "$host_path" ]; then
-        rm -f "$host_path"
-        info "Removed: $host_path"
-        removed=$((removed + 1))
-      fi
+      chrome_manifest="$install_dir/$host_name.chrome.json"
+      chromium_manifest=""
+      firefox_manifest="$install_dir/$host_name.firefox.json"
       ;;
   esac
-
-  if [ "$removed" -eq 0 ]; then
-    warn "Nothing to remove (host not installed)"
-  else
-    success "Uninstalled $removed item(s)"
-  fi
-
-  exit 0
 }
 
-# Perform uninstall if requested
+manifest_locations
+
+remove_file() {
+  if [ -n "$1" ] && [ -f "$1" ]; then
+    rm -f "$1"
+    info "Removed: $1"
+  fi
+}
+
 if [ "$uninstall" = true ]; then
-  uninstall_host
+  header "Uninstalling QR Wi-Fi RS native host"
+  remove_file "$chrome_manifest"
+  remove_file "$chromium_manifest"
+  remove_file "$firefox_manifest"
+
+  if [ "$platform" = "windows" ] && command -v reg >/dev/null 2>&1; then
+    reg delete "HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\$host_name" /f >/dev/null 2>&1 || true
+    reg delete "HKCU\\Software\\Mozilla\\NativeMessagingHosts\\$host_name" /f >/dev/null 2>&1 || true
+  fi
+
+  if [ "$host_path_set" = false ]; then
+    remove_file "$host_path"
+  fi
+  info "Uninstall complete"
+  exit 0
 fi
 
-# Install
-header "Installing QR Wi-Fi RS Native Messaging host..."
+header "Installing QR Wi-Fi RS native host"
 
 if [ "$skip_build" = true ]; then
   if [ ! -x "$host_path" ]; then
     echo "Host binary is not executable: $host_path" >&2
     exit 1
   fi
-  info "Using existing host: $host_path"
 else
-  # Build the host binary
-  info "Building qr-wifi-host..."
-  cargo build --release -p qr-wifi-host
-
-  # Create install directory
+  cargo build --release --locked -p qr-wifi-host
   mkdir -p "$install_dir"
-
-  # Copy binary
-  info "Installing to: $host_path"
-  cp target/release/qr-wifi-host "$host_path"
+  cp "target/release/$host_binary" "$host_path"
   chmod 755 "$host_path"
 fi
 
-# Write manifests based on platform
-case "$platform" in
-  macos)
-    chrome_dir="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts"
-    chromium_dir="$HOME/Library/Application Support/Chromium/NativeMessagingHosts"
-    firefox_dir="$HOME/Library/Application Support/Mozilla/NativeMessagingHosts"
-    ;;
-  linux)
-    chrome_dir="$HOME/.config/google-chrome/NativeMessagingHosts"
-    chromium_dir="$HOME/.config/chromium/NativeMessagingHosts"
-    firefox_dir="$HOME/.mozilla/native-messaging-hosts"
-    ;;
-  windows)
-    warn "Windows: Manual registry setup required"
-    warn "See below for instructions"
-    ;;
-esac
+json_escape() {
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
 
-write_manifest_file() {
-  dir="$1"
-  mkdir -p "$dir"
-  cat > "$dir/$host_name.json" <<EOF
+to_windows_path() {
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -w "$1"
+  else
+    printf '%s\n' "$1"
+  fi
+}
+
+write_chrome_manifest() {
+  file="$1"
+  binary_path="$host_path"
+  if [ "$platform" = "windows" ]; then
+    binary_path="$(to_windows_path "$host_path")"
+  fi
+  mkdir -p "$(dirname "$file")"
+  cat > "$file" <<EOF
 {
   "name": "$host_name",
   "description": "QR Wi-Fi RS native messaging host",
-  "path": "$host_path",
+  "path": "$(json_escape "$binary_path")",
   "type": "stdio",
-  "allowed_origins": ["chrome-extension://${chrome_id:-REPLACE_WITH_EXTENSION_ID}/"],
+  "allowed_origins": ["chrome-extension://$chrome_id/"]
+}
+EOF
+}
+
+write_firefox_manifest() {
+  file="$1"
+  binary_path="$host_path"
+  if [ "$platform" = "windows" ]; then
+    binary_path="$(to_windows_path "$host_path")"
+  fi
+  mkdir -p "$(dirname "$file")"
+  cat > "$file" <<EOF
+{
+  "name": "$host_name",
+  "description": "QR Wi-Fi RS native messaging host",
+  "path": "$(json_escape "$binary_path")",
+  "type": "stdio",
   "allowed_extensions": ["$firefox_id"]
 }
 EOF
 }
 
-# Write registry key on Windows
-write_registry() {
-  if command -v reg >/dev/null 2>&1; then
-    reg_path="HKCU\Software\Google\Chrome\NativeMessagingHosts\$host_name"
-    reg add "$reg_path" /ve /t REG_SZ /d "$host_path" /f >/dev/null 2>&1
-    reg add "$reg_path" /v "AllowedOrigins" /t REG_SZ /d "chrome-extension://${chrome_id}/" /f >/dev/null 2>&1
-    success "Registered Chrome Native Messaging host"
+write_firefox_manifest "$firefox_manifest"
+info "Firefox manifest: $firefox_manifest"
+
+if [ -n "$chrome_id" ]; then
+  write_chrome_manifest "$chrome_manifest"
+  info "Chrome manifest: $chrome_manifest"
+  if [ -n "$chromium_manifest" ]; then
+    write_chrome_manifest "$chromium_manifest"
+    info "Chromium manifest: $chromium_manifest"
   fi
-}
+else
+  info "Chrome registration skipped: provide --chrome-extension-id ID"
+fi
 
-case "$platform" in
-  macos|linux)
-    write_manifest_file "$chrome_dir"
-    write_manifest_file "$chromium_dir"
-    write_manifest_file "$firefox_dir"
-    success "Registered Native Messaging hosts"
-    ;;
-  windows)
-    if [ -n "$chrome_id" ]; then
-      write_registry
-    else
-      warn "Skipping Chrome registration (no extension ID provided)"
-    fi
-    ;;
-esac
+if [ "$platform" = "windows" ]; then
+  if ! command -v reg >/dev/null 2>&1; then
+    echo "Windows registry tool not found: reg" >&2
+    exit 1
+  fi
 
-# Summary
-header "Installation complete!"
+  firefox_registry_manifest="$(to_windows_path "$firefox_manifest")"
+  reg add "HKCU\\Software\\Mozilla\\NativeMessagingHosts\\$host_name" /ve /t REG_SZ /d "$firefox_registry_manifest" /f >/dev/null
 
-success "Binary: $host_path"
+  if [ -n "$chrome_id" ]; then
+    chrome_registry_manifest="$(to_windows_path "$chrome_manifest")"
+    reg add "HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\$host_name" /ve /t REG_SZ /d "$chrome_registry_manifest" /f >/dev/null
+  fi
+fi
 
-case "$platform" in
-  macos|linux)
-    success "Manifests:"
-    info "  Chrome:    $chrome_dir/$host_name.json"
-    info "  Chromium: $chromium_dir/$host_name.json"
-    info "  Firefox:  $firefox_dir/$host_name.json"
-
-    if [ -z "$chrome_id" ]; then
-      warn ""
-      warn "⚠️  Chrome/Chromium manifests contain a placeholder extension ID."
-      warn ""
-      warn "To fix:"
-      warn "  1. Load 'extension/' as an unpacked extension"
-      warn "  2. Copy the extension ID from chrome://extensions/"
-      warn "  3. Re-run this script with --chrome-extension-id ID"
-      warn ""
-      warn "Or edit the manifests directly and replace 'REPLACE_WITH_EXTENSION_ID'"
-      warn "with your actual extension ID."
-    fi
-    ;;
-  windows)
-    info ""
-    info "For Firefox on Windows, create this file:"
-    info "  %APPDATA%\\Mozilla\\NativeMessagingHosts\\$host_name.json"
-    info ""
-    cat <<'EOF'
-{
-  "name": "com.thetomyou.qrwifi",
-  "description": "QR Wi-Fi RS native messaging host",
-  "path": "PATH_TO_QR_WIFI_HOST",
-  "type": "stdio",
-  "allowed_extensions": ["qr-wifi-rs@thetomyou.com"]
-}
-EOF
-    info ""
-    info "Replace PATH_TO_QR_WIFI_HOST with: $host_path"
-    ;;
-esac
-
-info ""
-info "Next steps:"
-info "  1. Load 'extension/' as an unpacked extension in your browser"
-info "  2. Click the extension icon to open the popup"
-info "  3. Grant native messaging permission when prompted"
-info ""
-success "Ready!"
+header "Installation complete"
+info "Host: $host_path"
+info "Restart browser after changing Native Messaging registration."

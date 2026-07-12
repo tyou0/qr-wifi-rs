@@ -1,7 +1,7 @@
 //! Linux Wi-Fi adapter backed by NetworkManager (`nmcli`).
 
 use crate::error::Result;
-use crate::platform::{run, try_capture, WifiAdapter};
+use crate::platform::{run, run_redacted, WifiAdapter};
 use crate::types::{WifiCredentials, WifiNetwork, WifiSecurity};
 
 const NMCLI: &str = "nmcli";
@@ -142,7 +142,7 @@ impl WifiAdapter for LinuxAdapter {
             }
         }
         let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        run(NMCLI, &arg_refs)?;
+        run_redacted(NMCLI, &arg_refs)?;
         Ok(())
     }
 }

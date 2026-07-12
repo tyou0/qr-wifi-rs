@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 
 use crate::error::{CoreError, Result};
-use crate::platform::{run, try_capture, WifiAdapter};
+use crate::platform::{run, run_redacted, try_capture, WifiAdapter};
 use crate::types::{WifiCredentials, WifiNetwork, WifiSecurity};
 
 const NETWORKSETUP: &str = "/usr/sbin/networksetup";
@@ -353,7 +353,7 @@ impl WifiAdapter for MacosAdapter {
             }
         }
         let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        run(NETWORKSETUP, &arg_refs)?;
+        run_redacted(NETWORKSETUP, &arg_refs)?;
         Ok(())
     }
 }
