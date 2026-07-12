@@ -65,7 +65,8 @@ brew install ./Formula/qr-wifi-rs.rb
 It can also be installed directly from Gitea without cloning this repo:
 
 ```sh
-brew install https://gitea.thetomyou.com/mistercorea/qr_wifi_rs/raw/branch/main/Formula/qr-wifi-rs.rb
+curl -fsSL https://gitea.thetomyou.com/mistercorea/qr_wifi_rs/raw/branch/main/Formula/qr-wifi-rs.rb -o /tmp/qr-wifi-rs.rb
+brew install /tmp/qr-wifi-rs.rb
 ```
 
 Plain `brew install qr-wifi-rs` still requires publishing this formula in a

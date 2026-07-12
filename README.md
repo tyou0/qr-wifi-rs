@@ -70,8 +70,9 @@ Fast paths:
 # Homebrew install from the v0.1.0 source tarball (CLI/TUI/native host)
 brew install ./Formula/qr-wifi-rs.rb
 
-# Or install directly from Gitea without cloning this repo
-brew install https://gitea.thetomyou.com/mistercorea/qr_wifi_rs/raw/branch/main/Formula/qr-wifi-rs.rb
+# Or install without cloning this repo
+curl -fsSL https://gitea.thetomyou.com/mistercorea/qr_wifi_rs/raw/branch/main/Formula/qr-wifi-rs.rb -o /tmp/qr-wifi-rs.rb
+brew install /tmp/qr-wifi-rs.rb
 
 # Rust package manager install (CLI/TUI/native host)
 cargo install --path crates/cli
@@ -111,7 +112,8 @@ brew install ./Formula/qr-wifi-rs.rb
 Without cloning this repo:
 
 ```sh
-brew install https://gitea.thetomyou.com/mistercorea/qr_wifi_rs/raw/branch/main/Formula/qr-wifi-rs.rb
+curl -fsSL https://gitea.thetomyou.com/mistercorea/qr_wifi_rs/raw/branch/main/Formula/qr-wifi-rs.rb -o /tmp/qr-wifi-rs.rb
+brew install /tmp/qr-wifi-rs.rb
 ```
 
 For latest `main` instead of the pinned release:
