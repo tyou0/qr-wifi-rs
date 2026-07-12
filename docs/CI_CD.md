@@ -14,14 +14,18 @@ It runs on pushes, pull requests, and manual dispatch:
 - `cargo clippy --locked --all-targets -- -D warnings`
 - `cargo test --locked`
 - `cargo check --locked -p qr-wifi-gui`
+- process-level Native Messaging host test
+- `cargo audit`
+- Chrome/Firefox extension lint
 - Homebrew formula Ruby syntax check
-- native-host installer shell syntax check
+- native-host installer syntax and behavior test
 
 The Rust job runs on:
 
-- Ubuntu
-- macOS
-- Windows
+- Ubuntu x86_64
+- Windows x86_64
+- macOS ARM64
+- macOS Intel
 
 Gitea CI lives at:
 
@@ -39,35 +43,31 @@ GitHub release automation lives at:
 It runs when a tag starting with `v` is pushed:
 
 ```sh
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
 It builds and uploads:
 
-- Linux CLI/TUI/native-host tarball
-- macOS CLI/TUI/native-host tarball
+- Linux x86_64 CLI/TUI/native-host tarball
+- macOS ARM64 and Intel CLI/TUI/native-host tarballs
 - Windows CLI/TUI/native-host tarball
-- macOS desktop `.app` zip
-- macOS desktop `.dmg`
+- Linux desktop `.deb` and AppImage
+- Windows desktop NSIS installer
+- macOS ARM64 and Intel desktop `.app` zips and `.dmg` files
+- unsigned Chrome/Firefox extension package for local loading
 
 On tag pushes, it also creates a GitHub Release using the built-in
 `GITHUB_TOKEN`. The workflow has `contents: write` permission for that.
 
 ## Homebrew release note
 
-The current formula installs the pinned `v0.1.0` source tarball:
+The personal tap installs the pinned `v0.2.0` source tarball:
 
 ```sh
-brew install ./Formula/qr-wifi-rs.rb
+brew tap tyou0/qr-wifi-rs
+brew install qr-wifi-rs
 ```
 
-It can also be installed directly from Gitea without cloning this repo:
-
-```sh
-curl -fsSL https://gitea.thetomyou.com/mistercorea/qr_wifi_rs/raw/branch/main/Formula/qr-wifi-rs.rb -o /tmp/qr-wifi-rs.rb
-brew install /tmp/qr-wifi-rs.rb
-```
-
-Plain `brew install qr-wifi-rs` still requires publishing this formula in a
-Homebrew tap.
+The tap is hosted at `https://github.com/tyou0/homebrew-qr-wifi-rs`; nothing is
+submitted to Homebrew core.
