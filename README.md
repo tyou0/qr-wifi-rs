@@ -67,8 +67,11 @@ frontends.
 Fast paths:
 
 ```sh
-# Homebrew HEAD install (CLI/TUI/native host)
-brew install --HEAD ./Formula/qr-wifi-rs.rb
+# Homebrew install from the v0.1.0 source tarball (CLI/TUI/native host)
+brew install ./Formula/qr-wifi-rs.rb
+
+# Or install directly from Gitea without cloning this repo
+brew install https://gitea.thetomyou.com/mistercorea/qr_wifi_rs/raw/branch/main/Formula/qr-wifi-rs.rb
 
 # Rust package manager install (CLI/TUI/native host)
 cargo install --path crates/cli
@@ -102,14 +105,19 @@ The repo includes a Homebrew formula at `Formula/qr-wifi-rs.rb`.
 From this repo or a tap checkout:
 
 ```sh
-brew install --HEAD ./Formula/qr-wifi-rs.rb
+brew install ./Formula/qr-wifi-rs.rb
 ```
 
-After publishing the formula in a tap:
+Without cloning this repo:
 
 ```sh
-brew tap thetomyou/qr-wifi-rs
-brew install --HEAD qr-wifi-rs
+brew install https://gitea.thetomyou.com/mistercorea/qr_wifi_rs/raw/branch/main/Formula/qr-wifi-rs.rb
+```
+
+For latest `main` instead of the pinned release:
+
+```sh
+brew install --HEAD ./Formula/qr-wifi-rs.rb
 ```
 
 This installs:
@@ -132,8 +140,8 @@ Firefox can omit the Chrome extension ID:
 qr-wifi-install-native-host --skip-build --host-path "$(brew --prefix qr-wifi-rs)/bin/qr-wifi-host"
 ```
 
-Stable `brew install qr-wifi-rs` requires a published release tarball and real
-SHA256 in the formula. Until then, use `--HEAD`.
+Plain `brew install qr-wifi-rs` still requires publishing this formula in a tap.
+The direct formula commands above do not require publishing to Homebrew.
 
 ## Build
 

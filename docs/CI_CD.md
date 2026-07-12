@@ -56,20 +56,17 @@ On tag pushes, it also creates a GitHub Release using the built-in
 
 ## Homebrew release note
 
-The current formula supports HEAD installs:
+The current formula installs the pinned `v0.1.0` source tarball:
 
 ```sh
-brew install --HEAD ./Formula/qr-wifi-rs.rb
+brew install ./Formula/qr-wifi-rs.rb
 ```
 
-Stable `brew install qr-wifi-rs` still needs a published source tarball URL and
-real SHA256 in `Formula/qr-wifi-rs.rb`.
+It can also be installed directly from Gitea without cloning this repo:
 
-After a tag release, update the formula with:
-
-```ruby
-url "https://gitea.thetomyou.com/mistercorea/qr_wifi_rs/archive/v0.1.0.tar.gz"
-sha256 "<release tarball sha256>"
+```sh
+brew install https://gitea.thetomyou.com/mistercorea/qr_wifi_rs/raw/branch/main/Formula/qr-wifi-rs.rb
 ```
 
-Then publish the formula in a Homebrew tap.
+Plain `brew install qr-wifi-rs` still requires publishing this formula in a
+Homebrew tap.
