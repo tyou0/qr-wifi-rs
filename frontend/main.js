@@ -201,6 +201,7 @@ async function startScanning() {
   setStatus("Accessing camera", "loading");
   try {
     scanStream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
       video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } },
     });
     const video = $("#scan-video");

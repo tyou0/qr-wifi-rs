@@ -177,6 +177,90 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Enables the connect_network command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-connect-network",
+          "markdownDescription": "Enables the connect_network command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the decode_qr command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-decode-qr",
+          "markdownDescription": "Enables the decode_qr command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_active_ssid command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-active-ssid",
+          "markdownDescription": "Enables the get_active_ssid command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_credentials command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-credentials",
+          "markdownDescription": "Enables the get_credentials command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_networks command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-networks",
+          "markdownDescription": "Enables the list_networks command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the share_current command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-share-current",
+          "markdownDescription": "Enables the share_current command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the share_custom command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-share-custom",
+          "markdownDescription": "Enables the share_custom command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the connect_network command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-connect-network",
+          "markdownDescription": "Denies the connect_network command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the decode_qr command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-decode-qr",
+          "markdownDescription": "Denies the decode_qr command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_active_ssid command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-active-ssid",
+          "markdownDescription": "Denies the get_active_ssid command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_credentials command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-credentials",
+          "markdownDescription": "Denies the get_credentials command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_networks command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-networks",
+          "markdownDescription": "Denies the list_networks command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the share_current command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-share-current",
+          "markdownDescription": "Denies the share_current command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the share_custom command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-share-custom",
+          "markdownDescription": "Denies the share_custom command without any pre-configured scope."
+        },
+        {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",
           "type": "string",
           "const": "core:default",

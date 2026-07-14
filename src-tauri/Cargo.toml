@@ -17,6 +17,7 @@ tauri-build = { workspace = true }
 tauri = { workspace = true }
 qr-wifi-core = { workspace = true }
 serde = { workspace = true }
+tiny_http = "0.12"
 
 [features]
 # Used for production builds / when no dev server is set. DO NOT REMOVE.

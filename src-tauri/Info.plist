@@ -4,5 +4,10 @@
 <dict>
   <key>NSCameraUsageDescription</key>
   <string>QR Wi-Fi RS uses the camera to scan Wi-Fi QR codes and connect to networks.</string>
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsLocalNetworking</key>
+    <true/>
+  </dict>
 </dict>
 </plist>
