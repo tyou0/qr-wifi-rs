@@ -43,8 +43,8 @@ GitHub release automation lives at:
 It runs when a tag starting with `v` is pushed:
 
 ```sh
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.2.1
+git push origin v0.2.1
 ```
 
 It builds and uploads:
@@ -62,9 +62,10 @@ On tag pushes, it also creates a GitHub Release using the built-in
 
 ## Homebrew release note
 
-The personal tap installs the pinned `v0.2.0` source tarball:
+The personal tap installs the pinned `v0.2.1` source tarball:
 
 ```sh
+brew trust tyou0/qr-wifi-rs
 brew tap tyou0/qr-wifi-rs
 brew install qr-wifi-rs
 ```

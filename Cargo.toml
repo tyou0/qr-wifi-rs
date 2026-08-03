@@ -21,7 +21,7 @@ default-members = [
 ]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 # Minimum Supported Rust Version. Bump only when a newer feature is actually needed.
 rust-version = "1.74"

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "QR Wi-Fi RS",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Share or connect to Wi-Fi from the browser via the QR Wi-Fi RS native host.",
   "permissions": ["nativeMessaging"],
   "action": {

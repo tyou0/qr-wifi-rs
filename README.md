@@ -67,7 +67,8 @@ frontends.
 Fast paths:
 
 ```sh
-# Homebrew personal tap (CLI/TUI/native host)
+# Homebrew personal tap (macOS desktop app + CLI/TUI/native host)
+brew trust tyou0/qr-wifi-rs
 brew tap tyou0/qr-wifi-rs
 brew install qr-wifi-rs
 
@@ -101,9 +102,14 @@ For published releases, the same crates are intended to be installable with
 The formula is published in the free `tyou0/qr-wifi-rs` personal tap:
 
 ```sh
+brew trust tyou0/qr-wifi-rs
 brew tap tyou0/qr-wifi-rs
 brew install qr-wifi-rs
 ```
+
+The trust step is required before Homebrew will use this personal tap. A normal
+`brew install qr-wifi-rs` builds and installs the macOS desktop application as
+well as the terminal and Native Messaging tools.
 
 For latest `main` instead of the pinned release:
 
@@ -117,6 +123,12 @@ This installs:
 - `qr-wifi-tui`
 - `qr-wifi-host`
 - `qr-wifi-install-native-host`
+- `qr-wifi-gui`
+- `QR Wi-Fi RS.app` under the formula prefix; launch it with:
+
+  ```sh
+  open "$(brew --prefix qr-wifi-rs)/QR Wi-Fi RS.app"
+  ```
 
 Register the browser Native Messaging host after installing the browser
 extension:
@@ -131,7 +143,7 @@ Firefox can omit the Chrome extension ID:
 qr-wifi-install-native-host --skip-build --host-path "$(brew --prefix qr-wifi-rs)/bin/qr-wifi-host"
 ```
 
-The tap formula builds the pinned `v0.2.0` source archive. Nothing is submitted
+The tap formula builds the pinned `v0.2.1` source archive. Nothing is submitted
 to Homebrew core or an app store.
 
 ## Build
