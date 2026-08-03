@@ -48,7 +48,7 @@ rqrr = "0.10.1"
 # CLI / TUI
 clap = { version = "4", features = ["derive"] }
 ratatui = "0.29"
-crossterm = "0.28"
+crossterm = "0.29"
 
 # Desktop GUI
 tauri = { version = "2", features = [] }
