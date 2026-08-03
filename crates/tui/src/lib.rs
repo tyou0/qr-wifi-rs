@@ -36,19 +36,21 @@ pub fn print_qr(credentials: &WifiCredentials) -> Result<(), String> {
     print_payload(&payload)
 }
 
+const MAIN_MENU: &str = "╭─ QR Wi-Fi RS ──────────────────────────────╮
+│                                            │
+│  1) Share current Wi-Fi                    │
+│  2) Share by SSID  (fzf finder)            │
+│  3) Custom QR code                         │
+│  4) Connect / scan QR                      │
+│  5) Quit                                   │
+│                                            │
+╰────────────────────────────────────────────╯";
+
 /// Run the interactive main menu until the user quits.
 pub fn run_menu(adapter: &dyn WifiAdapter) {
     loop {
         clear();
-        println!("╭─ QR Wi-Fi RS ───────────────────────────────╮");
-        println!("│                                            │");
-        println!("│  1) Share current Wi-Fi                    │");
-        println!("│  2) Share by SSID  (fzf finder)            │");
-        println!("│  3) Custom QR code                         │");
-        println!("│  4) Connect / scan QR                      │");
-        println!("│  5) Quit                                   │");
-        println!("│                                            │");
-        println!("╰────────────────────────────────────────────╯");
+        println!("{MAIN_MENU}");
 
         match prompt("\nChoice").as_str() {
             "1" => share_current(adapter),
@@ -218,4 +220,19 @@ fn read_line() -> String {
 fn pause() {
     println!("\n— press Enter to return to the menu —");
     read_line();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MAIN_MENU;
+
+    #[test]
+    fn main_menu_box_has_aligned_edges() {
+        let widths: Vec<usize> = MAIN_MENU.lines().map(|line| line.chars().count()).collect();
+        assert!(!widths.is_empty());
+        assert!(
+            widths.iter().all(|width| *width == widths[0]),
+            "menu line widths are not aligned: {widths:?}"
+        );
+    }
 }
