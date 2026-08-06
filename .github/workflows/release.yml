@@ -31,7 +31,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -64,7 +64,7 @@ jobs:
           tar -czf "dist/$package.tar.gz" -C dist "$package"
 
       - name: Upload CLI/TUI/host artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: qr-wifi-rs-${{ matrix.target }}
           path: dist/*.tar.gz
@@ -91,7 +91,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -139,7 +139,7 @@ jobs:
           esac
 
       - name: Upload desktop artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: qr-wifi-rs-desktop-${{ matrix.target }}
           path: dist/*
@@ -150,7 +150,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Lint extension
         run: npx --yes web-ext@8 lint --source-dir extension --warnings-as-errors
@@ -162,7 +162,7 @@ jobs:
           mv dist/*.zip dist/qr-wifi-rs-browser-extension-unsigned.zip
 
       - name: Upload extension artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: qr-wifi-rs-browser-extension
           path: dist/*.zip
@@ -175,13 +175,13 @@ jobs:
 
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
 
       - name: Create release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/*
           generate_release_notes: true

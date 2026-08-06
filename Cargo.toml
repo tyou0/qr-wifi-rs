@@ -23,8 +23,8 @@ default-members = [
 [workspace.package]
 version = "0.2.1"
 edition = "2021"
-# Minimum Supported Rust Version. Bump only when a newer feature is actually needed.
-rust-version = "1.74"
+# Minimum Supported Rust Version. Locked dependencies require Rust 1.88 or newer.
+rust-version = "1.88"
 license = "MIT"
 authors = ["Tom You <dev@thetomyou.com>"]
 repository = "https://gitea.thetomyou.com/mistercorea/qr_wifi_rs"

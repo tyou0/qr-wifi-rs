@@ -3,6 +3,7 @@ name = "qr-wifi-core"
 description = "Cross-platform core for QR Wi-Fi: OS-level Wi-Fi adapters, QR build/decode, and the IPC protocol shared by the CLI/TUI/GUI and the browser-extension host."
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true

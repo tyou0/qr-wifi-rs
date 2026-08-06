@@ -14,9 +14,7 @@ use qr_wifi_core::{
     share_custom as core_share_custom, WifiCredentials, WifiNetwork,
 };
 use std::net::TcpListener;
-use tauri::{
-    ipc::CapabilityBuilder, Manager, WebviewUrl, WebviewWindowBuilder,
-};
+use tauri::{ipc::CapabilityBuilder, Manager, WebviewUrl, WebviewWindowBuilder};
 use tiny_http::{Header, Method, Response, Server, StatusCode};
 
 fn to_message(error: impl std::fmt::Display) -> String {
@@ -96,9 +94,7 @@ fn main() {
                             response.add_header(header);
                         }
                         if let Some(csp) = asset.csp_header {
-                            if let Ok(header) =
-                                Header::from_bytes("Content-Security-Policy", csp)
-                            {
+                            if let Ok(header) = Header::from_bytes("Content-Security-Policy", csp) {
                                 response.add_header(header);
                             }
                         }
@@ -107,7 +103,7 @@ fn main() {
                         }
                         let _ = request.respond(response);
                     }
-            })?;
+                })?;
 
             let url: tauri::Url = format!("http://localhost:{port}/").parse()?;
             let capability = command_names::GUI_COMMANDS.iter().fold(

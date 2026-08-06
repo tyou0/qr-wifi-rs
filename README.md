@@ -320,7 +320,7 @@ cargo tauri dev
 # Produce an installer/bundle for the current OS (macOS dmg, Linux AppImage/deb, Windows msi/exe)
 cargo tauri build
 
-# The resulting app binary is under src-tauri/target/release/
+# The resulting app binary is under target/release/
 ```
 
 The GUI has Share / Custom / Connect tabs. Camera scanning is decoded in Rust

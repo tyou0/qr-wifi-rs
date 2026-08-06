@@ -3,6 +3,7 @@ name = "qr-wifi-gui"
 description = "Tauri desktop GUI for QR Wi-Fi."
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true

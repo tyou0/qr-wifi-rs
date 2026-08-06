@@ -3,6 +3,7 @@ name = "qr-wifi-tui"
 description = "Interactive menu-driven terminal UI for QR Wi-Fi (also used as the default mode of the CLI)."
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
