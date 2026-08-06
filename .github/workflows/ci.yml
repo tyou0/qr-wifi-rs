@@ -76,7 +76,7 @@ jobs:
           sh scripts/test-install-native-host.sh
 
       - name: Lint Chrome and Firefox extension
-        run: npx --yes web-ext@8 lint --source-dir extension --warnings-as-errors
+        run: npx --yes web-ext@8.10.0 lint --source-dir extension --warnings-as-errors
 
   dependency-audit:
     name: Rust dependency audit
