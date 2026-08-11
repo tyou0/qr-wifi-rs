@@ -64,6 +64,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Check camera scanner contract
+        run: node scripts/test-camera-scanner.mjs
+
       - name: Check release packaging contract
         run: scripts/test-release-packaging.sh
 

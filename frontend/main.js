@@ -1,3 +1,8 @@
+import {
+  cameraCaptureDimensions,
+  cameraVideoConstraints,
+} from "./scanner.mjs";
+
 // QR Wi-Fi RS frontend. Vanilla JS — no framework, no bundler.
 // All heavy lifting happens in Rust via Tauri commands (window.__TAURI__).
 
@@ -195,14 +200,14 @@ $("#custom-form").addEventListener("submit", async (event) => {
   }
 });
 
-// Camera scanning: capture a frame, send the PNG to Rust for QR decoding.
+// Camera scanning: capture a frame, send the JPEG to Rust for QR decoding.
 async function startScanning() {
   print("Initializing camera...");
   setStatus("Accessing camera", "loading");
   try {
     scanStream = await navigator.mediaDevices.getUserMedia({
       audio: false,
-      video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } },
+      video: cameraVideoConstraints(),
     });
     const video = $("#scan-video");
     video.srcObject = scanStream;
@@ -257,14 +262,17 @@ async function captureAndDecode() {
     return;
   }
   isDecoding = true;
-  // Downscale to keep the encode/decode cheap; JPEG is much lighter than PNG
-  // for a camera frame.
-  const w = 360;
-  const h = Math.max(1, Math.round((video.videoHeight / video.videoWidth) * w));
+  // Preserve native detail for QR detection. The old unconditional 360px
+  // downscale discarded enough modules that ordinary camera-distance codes
+  // became undecodable. Cap only large sources to bound IPC/decoder work.
+  const { width: w, height: h } = cameraCaptureDimensions(
+    video.videoWidth,
+    video.videoHeight,
+  );
   scanCanvas.width = w;
   scanCanvas.height = h;
   scanCtx.drawImage(video, 0, 0, w, h);
-  const dataUrl = scanCanvas.toDataURL("image/jpeg", 0.85);
+  const dataUrl = scanCanvas.toDataURL("image/jpeg", 0.92);
   const base64 = dataUrl.slice("data:image/jpeg;base64,".length);
   try {
     const credentials = await invoke("decode_qr", { imageBase64: base64 });
