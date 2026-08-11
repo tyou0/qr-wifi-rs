@@ -45,6 +45,7 @@ jobs:
 
       - name: Check packaging metadata
         run: |
+          scripts/test-release-packaging.sh
           ruby -c Formula/qr-wifi-rs.rb
           ruby -c scripts/homebrew-formula.rb
           sh -n scripts/install-native-host.sh

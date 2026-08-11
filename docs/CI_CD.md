@@ -40,25 +40,43 @@ GitHub release automation lives at:
 
 - `.github/workflows/release.yml`
 
-It runs when a tag starting with `v` is pushed:
+### Single release command
+
+Run from a clean, synchronized `main` checkout on Podman:
 
 ```sh
-git tag v0.2.1
-git push origin v0.2.1
+./scripts/release-all.sh 0.2.2
 ```
 
-It builds and uploads:
+The script validates Gitea/GitHub refs, updates `Cargo.toml`, `Cargo.lock`, and
+`src-tauri/tauri.conf.json`, runs the packaging contract plus Rust release gates,
+creates an annotated `v0.2.2` tag, and atomically pushes `main` and the tag to the
+canonical `gitea` remote. Gitea's sync-on-commit push mirror then sends both refs
+to GitHub. The mirrored `v*` tag triggers GitHub Actions and creates the GitHub
+Release.
 
-- Linux x86_64 CLI/TUI/native-host tarball
-- macOS ARM64 and Intel CLI/TUI/native-host tarballs
-- Windows CLI/TUI/native-host tarball
-- Linux desktop `.deb` and AppImage
-- Windows desktop NSIS installer
-- macOS ARM64 and Intel desktop `.app` zips and `.dmg` files
-- unsigned Chrome/Firefox extension package for local loading
+Use a new semantic version for every run. The script refuses a dirty worktree,
+non-`main` branch, forge-ref drift, or an existing local/Gitea/GitHub tag.
 
-On tag pushes, it also creates a GitHub Release using the built-in
-`GITHUB_TOKEN`. The workflow has `contents: write` permission for that.
+### Package matrix and unique names
+
+Every filename includes component, version, OS, and architecture. This prevents
+artifact collisions when Gitea synchronizes the release tag to GitHub.
+
+| Target | Terminal package | Desktop packages |
+| --- | --- | --- |
+| Linux x86_64 | `qr-wifi-rs-cli-0.2.2-linux-x86_64.tar.gz` | `.AppImage`, `.deb`, `.rpm` |
+| Windows x86_64 | `qr-wifi-rs-cli-0.2.2-windows-x86_64.tar.gz` | `-setup.exe` (NSIS), `.msi` |
+| macOS ARM64 | `qr-wifi-rs-cli-0.2.2-macos-arm64.tar.gz` | `.app.zip`, `.dmg` |
+| macOS Intel | `qr-wifi-rs-cli-0.2.2-macos-x86_64.tar.gz` | `.app.zip`, `.dmg` |
+
+The release also contains:
+
+- `qr-wifi-rs-browser-extension-0.2.2-unsigned.zip`
+- `qr-wifi-rs-0.2.2-SHA256SUMS.txt`
+
+A manual tag push still works, but the release script is the supported path
+because it keeps Cargo/Tauri versions synchronized and runs the release gates.
 
 ## Homebrew release note
 

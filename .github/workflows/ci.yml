@@ -64,6 +64,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Check release packaging contract
+        run: scripts/test-release-packaging.sh
+
       - name: Check Homebrew formula syntax
         run: |
           ruby -c Formula/qr-wifi-rs.rb

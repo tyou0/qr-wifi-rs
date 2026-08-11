@@ -204,8 +204,38 @@ CI/CD is configured in:
 - `.github/workflows/release.yml`
 - `.gitea/workflows/ci.yml`
 
-See [`docs/CI_CD.md`](docs/CI_CD.md) for release tags, generated artifacts, and
-Homebrew release notes.
+### One-command release for every platform
+
+From a clean `main` checkout on Podman, this single command bumps the coordinated
+Cargo/Tauri version, runs release gates, commits, tags, and pushes to canonical
+Gitea:
+
+```sh
+./scripts/release-all.sh 0.2.2
+```
+
+Gitea's sync-on-commit push mirror sends `main` and the new tag to GitHub. The
+tag starts GitHub Actions, which publishes one GitHub Release with uniquely
+named packages (version + OS + architecture, so synced artifacts never collide):
+
+- Linux x86_64: CLI/TUI/host `.tar.gz`; desktop `.AppImage`, `.deb`, `.rpm`
+- Windows x86_64: CLI/TUI/host `.tar.gz`; desktop NSIS `-setup.exe`, `.msi`
+- macOS ARM64: CLI/TUI/host `.tar.gz`; desktop `.app.zip`, `.dmg`
+- macOS Intel x86_64: CLI/TUI/host `.tar.gz`; desktop `.app.zip`, `.dmg`
+- Browser extension: versioned unsigned `.zip`
+- Release integrity: versioned `SHA256SUMS.txt`
+
+Example desktop filename:
+
+```text
+qr-wifi-rs-desktop-0.2.2-windows-x86_64-setup.exe
+```
+
+The command refuses dirty/non-`main`/unsynchronized worktrees and existing tags.
+It asks before publishing. Use a new semantic version for each release.
+
+See [`docs/CI_CD.md`](docs/CI_CD.md) for the complete package matrix, release
+flow, generated artifacts, and Homebrew release notes.
 
 ## Run
 

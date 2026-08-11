@@ -46,7 +46,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          package="qr-wifi-rs-${{ matrix.target }}"
+          version="${GITHUB_REF_NAME#v}"
+          package="qr-wifi-rs-cli-${version}-${{ matrix.target }}"
           mkdir -p "dist/$package"
 
           if [[ "$RUNNER_OS" == "Windows" ]]; then
@@ -66,7 +67,7 @@ jobs:
       - name: Upload CLI/TUI/host artifact
         uses: actions/upload-artifact@v7
         with:
-          name: qr-wifi-rs-${{ matrix.target }}
+          name: qr-wifi-rs-cli-${{ github.ref_name }}-${{ matrix.target }}
           path: dist/*.tar.gz
 
   desktop-artifacts:
@@ -78,10 +79,10 @@ jobs:
         include:
           - os: ubuntu-latest
             target: linux-x86_64
-            bundles: appimage,deb
+            bundles: appimage,deb,rpm
           - os: windows-latest
             target: windows-x86_64
-            bundles: nsis
+            bundles: nsis,msi
           - os: macos-latest
             target: macos-arm64
             bundles: app,dmg
@@ -103,7 +104,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf rpm
           sudo apt-get install -y libfuse2 || sudo apt-get install -y libfuse2t64
 
       - name: Install Tauri CLI
@@ -116,32 +117,47 @@ jobs:
         if: runner.os == 'macOS'
         run: codesign --verify --deep --strict --verbose=2 "target/release/bundle/macos/QR Wi-Fi RS.app"
 
-      - name: Collect desktop artifacts
+      - name: Collect uniquely named desktop artifacts
         shell: bash
         run: |
           set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
           mkdir -p dist
+
+          copy_one() {
+            local pattern=$1
+            local destination=$2
+            local matches=()
+            mapfile -t matches < <(compgen -G "$pattern" || true)
+            if [[ ${#matches[@]} -ne 1 ]]; then
+              printf 'Expected exactly one artifact for %s; found %s\n' "$pattern" "${#matches[@]}" >&2
+              exit 1
+            fi
+            cp "${matches[0]}" "$destination"
+          }
+
           case "$RUNNER_OS" in
             Linux)
-              cp target/release/bundle/deb/*.deb dist/
-              cp target/release/bundle/appimage/*.AppImage dist/
+              copy_one 'target/release/bundle/deb/*.deb' "dist/qr-wifi-rs-desktop-${version}-${{ matrix.target }}.deb"
+              copy_one 'target/release/bundle/appimage/*.AppImage' "dist/qr-wifi-rs-desktop-${version}-${{ matrix.target }}.AppImage"
+              copy_one 'target/release/bundle/rpm/*.rpm' "dist/qr-wifi-rs-desktop-${version}-${{ matrix.target }}.rpm"
               ;;
             Windows)
-              cp target/release/bundle/nsis/*.exe dist/
+              copy_one 'target/release/bundle/nsis/*.exe' "dist/qr-wifi-rs-desktop-${version}-${{ matrix.target }}-setup.exe"
+              copy_one 'target/release/bundle/msi/*.msi' "dist/qr-wifi-rs-desktop-${version}-${{ matrix.target }}.msi"
               ;;
             macOS)
               ditto -c -k --sequesterRsrc --keepParent \
                 "target/release/bundle/macos/QR Wi-Fi RS.app" \
-                "dist/QR-Wi-Fi-RS-${{ matrix.target }}.app.zip"
-              cp target/release/bundle/dmg/*.dmg \
-                "dist/QR-Wi-Fi-RS-${{ matrix.target }}.dmg"
+                "dist/qr-wifi-rs-desktop-${version}-${{ matrix.target }}.app.zip"
+              copy_one 'target/release/bundle/dmg/*.dmg' "dist/qr-wifi-rs-desktop-${version}-${{ matrix.target }}.dmg"
               ;;
           esac
 
       - name: Upload desktop artifact
         uses: actions/upload-artifact@v7
         with:
-          name: qr-wifi-rs-desktop-${{ matrix.target }}
+          name: qr-wifi-rs-desktop-${{ github.ref_name }}-${{ matrix.target }}
           path: dist/*
 
   extension-artifact:
@@ -156,15 +172,18 @@ jobs:
         run: npx --yes web-ext@8.10.0 lint --source-dir extension --warnings-as-errors
 
       - name: Package unsigned extension
+        shell: bash
         run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
           mkdir -p dist
           npx --yes web-ext@8.10.0 build --source-dir extension --artifacts-dir dist --overwrite-dest
-          mv dist/*.zip dist/qr-wifi-rs-browser-extension-unsigned.zip
+          mv dist/*.zip "dist/qr-wifi-rs-browser-extension-${version}-unsigned.zip"
 
       - name: Upload extension artifact
         uses: actions/upload-artifact@v7
         with:
-          name: qr-wifi-rs-browser-extension
+          name: qr-wifi-rs-browser-extension-${{ github.ref_name }}
           path: dist/*.zip
 
   publish-github-release:
@@ -182,10 +201,13 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Generate SHA-256 checksums
+      - name: Create release checksums
+        shell: bash
         run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
           cd dist
-          sha256sum * > checksums.txt
+          sha256sum -- * > "qr-wifi-rs-${version}-SHA256SUMS.txt"
 
       - name: Create release
         uses: softprops/action-gh-release@v3
@@ -194,4 +216,4 @@ jobs:
           generate_release_notes: true
           body: |
             Signing status: macOS bundles are ad-hoc signed; Windows installers and the browser extension are unsigned.
-            Verify downloaded files against checksums.txt.
+            Verify downloaded files against the versioned SHA256SUMS file.
