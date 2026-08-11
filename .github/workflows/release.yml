@@ -128,7 +128,9 @@ jobs:
             local pattern=$1
             local destination=$2
             local matches=()
-            mapfile -t matches < <(compgen -G "$pattern" || true)
+            while IFS= read -r match; do
+              matches+=("$match")
+            done < <(compgen -G "$pattern" || true)
             if [[ ${#matches[@]} -ne 1 ]]; then
               printf 'Expected exactly one artifact for %s; found %s\n' "$pattern" "${#matches[@]}" >&2
               exit 1
