@@ -21,7 +21,7 @@ default-members = [
 ]
 
 [workspace.package]
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 # Minimum Supported Rust Version. Locked dependencies require Rust 1.88 or newer.
 rust-version = "1.88"
