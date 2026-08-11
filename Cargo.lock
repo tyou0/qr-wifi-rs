@@ -2518,7 +2518,7 @@ checksum = "e0c5ccf5294c6ccd63a74f1565028353830a9c2f5eb0c682c355c471726a6e3f"
 
 [[package]]
 name = "qr-wifi-cli"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "clap",
  "qr-wifi-core",
@@ -2527,7 +2527,7 @@ dependencies = [
 
 [[package]]
 name = "qr-wifi-core"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "base64 0.22.1",
  "image",
@@ -2540,7 +2540,7 @@ dependencies = [
 
 [[package]]
 name = "qr-wifi-gui"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "qr-wifi-core",
  "serde",
@@ -2551,7 +2551,7 @@ dependencies = [
 
 [[package]]
 name = "qr-wifi-host"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "qr-wifi-core",
  "serde_json",
@@ -2559,7 +2559,7 @@ dependencies = [
 
 [[package]]
 name = "qr-wifi-tui"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "crossterm",
  "qr-wifi-core",

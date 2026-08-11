@@ -1,6 +1,6 @@
 {
   "productName": "QR Wi-Fi RS",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "identifier": "com.thetomyou.qrwifirs",
   "build": {
     "frontendDist": "../frontend",
