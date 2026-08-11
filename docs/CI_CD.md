@@ -80,7 +80,7 @@ because it keeps Cargo/Tauri versions synchronized and runs the release gates.
 
 ## Homebrew release note
 
-The personal tap installs the pinned `v0.2.1` source tarball:
+The personal tap installs the pinned `v0.2.4` public GitHub source tarball:
 
 ```sh
 brew trust tyou0/qr-wifi-rs

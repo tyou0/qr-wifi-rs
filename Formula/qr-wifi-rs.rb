@@ -1,10 +1,10 @@
 class QrWifiRs < Formula
   desc "Share Wi-Fi credentials as QR codes and connect from Wi-Fi QR payloads"
-  homepage "https://gitea.thetomyou.com/mistercorea/qr_wifi_rs"
+  homepage "https://github.com/tyou0/qr-wifi-rs"
   license "MIT"
-  url "https://gitea.thetomyou.com/mistercorea/qr_wifi_rs/archive/v0.2.1.tar.gz"
-  sha256 "29aa9c94e56d635dfe8b80119f6857e3dfde7629e4937998cc8cf26f5c5666c3"
-  head "https://gitea.thetomyou.com/mistercorea/qr_wifi_rs.git", branch: "main"
+  url "https://github.com/tyou0/qr-wifi-rs/archive/refs/tags/v0.2.4.tar.gz"
+  sha256 "e2cd537908f98b118903f49976cb2aadfa4012652ceb8d901995681415aba009"
+  head "https://github.com/tyou0/qr-wifi-rs.git", branch: "main"
 
   depends_on :macos
   depends_on "rust" => :build

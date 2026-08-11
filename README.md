@@ -143,7 +143,7 @@ Firefox can omit the Chrome extension ID:
 qr-wifi-install-native-host --skip-build --host-path "$(brew --prefix qr-wifi-rs)/bin/qr-wifi-host"
 ```
 
-The tap formula builds the pinned `v0.2.1` source archive. Nothing is submitted
+The tap formula builds the pinned `v0.2.4` public GitHub source archive. Nothing is submitted
 to Homebrew core or an app store.
 
 ## Build
