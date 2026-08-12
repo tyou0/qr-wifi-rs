@@ -19,6 +19,7 @@ qrcode = { workspace = true }
 image = { workspace = true }
 base64 = { workspace = true }
 rqrr = { workspace = true }
+rxing = { workspace = true }
 
 [dev-dependencies]
 # Pure-logic unit tests live inside each module; no extra dev-deps required.

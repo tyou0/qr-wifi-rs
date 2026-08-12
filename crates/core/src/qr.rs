@@ -10,6 +10,7 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use image::{DynamicImage, ImageFormat, ImageReader, Limits, Luma};
 use qrcode::render::unicode::Dense1x2;
 use qrcode::QrCode;
+use rxing::{BarcodeFormat, DecodeHints};
 
 use crate::error::{CoreError, Result};
 use crate::payload::build_payload;
@@ -82,15 +83,33 @@ pub fn decode_image(img: DynamicImage) -> Result<String> {
             "image dimensions exceed {MAX_IMAGE_DIMENSION}x{MAX_IMAGE_DIMENSION}"
         )));
     }
-    let mut prepared = rqrr::PreparedImage::prepare(img.to_luma8());
-    let grids = prepared.detect_grids();
-    let (_meta, content) = grids
-        .into_iter()
-        .next()
-        .ok_or_else(|| CoreError::QrDecode("no QR code found in image".into()))?
-        .decode()
-        .map_err(|e| CoreError::QrDecode(e.to_string()))?;
-    Ok(content)
+
+    // rqrr is fast for conventional QR codes. Keep it as the primary decoder,
+    // then fall back to ZXing's more tolerant detector for customized phone QR
+    // styles (round modules/finder rings and center logos).
+    let luma = img.to_luma8();
+    let mut prepared = rqrr::PreparedImage::prepare(luma.clone());
+    if let Some(grid) = prepared.detect_grids().into_iter().next() {
+        if let Ok((_meta, content)) = grid.decode() {
+            return Ok(content);
+        }
+    }
+
+    let (width, height) = luma.dimensions();
+    let mut hints = DecodeHints {
+        TryHarder: Some(true),
+        AlsoInverted: Some(true),
+        ..DecodeHints::default()
+    };
+    rxing::helpers::detect_in_luma_with_hints(
+        luma.into_raw(),
+        width,
+        height,
+        Some(BarcodeFormat::QR_CODE),
+        &mut hints,
+    )
+    .map(|result| result.getText().to_owned())
+    .map_err(|error| CoreError::QrDecode(error.to_string()))
 }
 
 /// Decode a QR code from base64-encoded image bytes (e.g. a PNG captured by a
