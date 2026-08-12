@@ -207,8 +207,8 @@ CI/CD is configured in:
 ### One-command release for every platform
 
 From a clean `main` checkout on Podman, this single command bumps the coordinated
-Cargo/Tauri version, runs release gates, commits, tags, and pushes to canonical
-Gitea:
+Cargo, Tauri, and browser-extension versions, runs release gates, commits, tags,
+and pushes to canonical Gitea:
 
 ```sh
 ./scripts/release-all.sh 0.2.2
@@ -234,8 +234,11 @@ qr-wifi-rs-desktop-0.2.2-windows-x86_64-setup.exe
 The command refuses dirty/non-`main`/unsynchronized worktrees and existing tags.
 It asks before publishing. Use a new semantic version for each release.
 
-See [`docs/CI_CD.md`](docs/CI_CD.md) for the complete package matrix, release
-flow, generated artifacts, and Homebrew release notes.
+See [`docs/CI_CD.md`](docs/CI_CD.md) for the concise operator runbook. See
+[`docs/DEPLOYMENT_GUIDE.md`](docs/DEPLOYMENT_GUIDE.md) for the teaching-oriented
+architecture, current automation status, trust boundaries, store publication
+blueprints (Chrome, Firefox, Homebrew, WinGet, Microsoft Store, Apple, and Linux),
+verification gates, and rollback procedures.
 
 ## Run
 

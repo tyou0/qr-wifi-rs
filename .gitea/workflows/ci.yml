@@ -41,11 +41,14 @@ jobs:
         run: cargo test --locked
 
       - name: Check Tauri GUI crate
-        run: cargo check --locked -p qr-wifi-gui
+        run: |
+          cargo check --locked -p qr-wifi-gui
+          cargo test --locked -p qr-wifi-gui
 
       - name: Check packaging metadata
         run: |
           node scripts/test-camera-scanner.mjs
+          node scripts/test-frontend-console.mjs
           scripts/test-release-packaging.sh
           ruby -c Formula/qr-wifi-rs.rb
           ruby -c scripts/homebrew-formula.rb

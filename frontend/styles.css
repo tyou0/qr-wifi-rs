@@ -438,9 +438,26 @@ select:focus-visible {
   border-top: 1px solid var(--line);
 }
 
+.console-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.output-section.collapsed .output-viewport {
+  display: none;
+}
+
+.output-section.collapsed {
+  padding-bottom: 0.15rem;
+}
+
 .output-viewport {
-  height: 64px;
+  height: 140px;
+  min-height: 64px;
+  max-height: 240px;
   overflow: auto;
+  resize: vertical;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--surface);
@@ -456,7 +473,8 @@ pre {
   color: var(--ink);
   font-size: 0.69rem;
   line-height: 1.2;
-  white-space: pre;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .modal {

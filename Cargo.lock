@@ -2647,6 +2647,7 @@ version = "0.2.4"
 dependencies = [
  "qr-wifi-core",
  "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tiny_http",

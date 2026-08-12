@@ -10,9 +10,11 @@
 mod command_names;
 
 use qr_wifi_core::{
-    decode_qr_base64, default_adapter, networks, share_current as core_share_current,
-    share_custom as core_share_custom, WifiCredentials, WifiNetwork,
+    decode_image_base64, default_adapter, networks, parse_payload,
+    share_current as core_share_current, share_custom as core_share_custom, WifiCredentials,
+    WifiNetwork,
 };
+use serde::Serialize;
 use std::net::TcpListener;
 use tauri::{ipc::CapabilityBuilder, Manager, WebviewUrl, WebviewWindowBuilder};
 use tiny_http::{Header, Method, Response, Server, StatusCode};
@@ -52,9 +54,53 @@ fn connect_network(credentials: WifiCredentials) -> Result<(), String> {
     qr_wifi_core::connect_credentials(default_adapter().as_ref(), &credentials).map_err(to_message)
 }
 
+// Keep both representations at the GUI boundary: parsed credentials drive the
+// connection command, while the exact payload lets the local study console show
+// escaping/security tokens exactly as the QR encoded them.
+#[derive(Serialize)]
+struct DecodedQr {
+    payload: String,
+    credentials: WifiCredentials,
+}
+
 #[tauri::command]
-fn decode_qr(image_base64: String) -> Result<WifiCredentials, String> {
-    decode_qr_base64(&image_base64).map_err(to_message)
+fn decode_qr(image_base64: String) -> Result<DecodedQr, String> {
+    let payload = decode_image_base64(&image_base64).map_err(to_message)?;
+    let credentials = parse_payload(&payload).map_err(to_message)?;
+    Ok(DecodedQr {
+        payload,
+        credentials,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use qr_wifi_core::WifiSecurity;
+    use serde_json::json;
+
+    #[test]
+    fn decoded_qr_serializes_payload_and_full_credentials() {
+        let decoded = DecodedQr {
+            payload: "WIFI:S:Fixture;T:WPA;P:test-password;H:true;;".into(),
+            credentials: WifiCredentials::new("Fixture", WifiSecurity::Wpa)
+                .with_password("test-password")
+                .hidden(true),
+        };
+
+        assert_eq!(
+            serde_json::to_value(decoded).unwrap(),
+            json!({
+                "payload": "WIFI:S:Fixture;T:WPA;P:test-password;H:true;;",
+                "credentials": {
+                    "ssid": "Fixture",
+                    "security": "WPA",
+                    "password": "test-password",
+                    "hidden": true
+                }
+            })
+        );
+    }
 }
 
 fn main() {

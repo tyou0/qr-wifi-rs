@@ -76,12 +76,22 @@
         </section>
       </div>
 
-      <section class="output-section">
+      <section id="console-section" class="output-section">
         <div class="section-header">
           <h2>Console</h2>
-          <button id="clear-output" class="text-btn">Clear</button>
+          <div class="console-actions">
+            <button id="clear-output" class="text-btn">Clear</button>
+            <button
+              id="toggle-console"
+              class="text-btn"
+              aria-expanded="true"
+              aria-controls="console-viewport"
+            >
+              Hide
+            </button>
+          </div>
         </div>
-        <div class="output-viewport">
+        <div id="console-viewport" class="output-viewport">
           <pre id="output">Generated status/logs will appear here.</pre>
         </div>
       </section>

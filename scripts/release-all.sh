@@ -11,7 +11,7 @@ Example:
 
 Creates one coordinated release from canonical Gitea repository:
   1. validates clean main and both forge remotes
-  2. updates Cargo and Tauri versions
+  2. updates Cargo, Tauri, and browser-extension versions
   3. runs release/format/test/GUI checks
   4. commits and atomically pushes main plus annotated tag to Gitea
   5. Gitea push mirror syncs tag to GitHub
@@ -34,8 +34,8 @@ esac
 version=${1#v}
 tag="v$version"
 
-if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
-  printf 'Invalid semantic version: %s\n' "$1" >&2
+if ! validation_output=$(python3 scripts/set-release-version.py "$version" --validate-only 2>&1); then
+  printf 'Invalid stable release version %s: %s\n' "$1" "$validation_output" >&2
   exit 2
 fi
 
@@ -106,31 +106,7 @@ rollback() {
 }
 trap rollback EXIT
 
-VERSION="$version" python3 - <<'PY'
-import json
-import os
-from pathlib import Path
-import re
-
-version = os.environ["VERSION"]
-
-cargo = Path("Cargo.toml")
-text = cargo.read_text()
-updated, count = re.subn(
-    r'(?m)^(\[workspace\.package\]\nversion = ")[^"]+("$)',
-    rf'\g<1>{version}\g<2>',
-    text,
-    count=1,
-)
-if count != 1:
-    raise SystemExit("could not update [workspace.package] version in Cargo.toml")
-cargo.write_text(updated)
-
-tauri_path = Path("src-tauri/tauri.conf.json")
-tauri = json.loads(tauri_path.read_text())
-tauri["version"] = version
-tauri_path.write_text(json.dumps(tauri, indent=2) + "\n")
-PY
+python3 scripts/set-release-version.py "$version"
 
 # Refresh workspace package versions in Cargo.lock, then enforce release gates.
 cargo check -p qr-wifi-gui
@@ -140,7 +116,7 @@ cargo test --locked
 cargo check --locked -p qr-wifi-gui
 
 git diff --check
-git add Cargo.toml Cargo.lock src-tauri/tauri.conf.json
+git add Cargo.toml Cargo.lock src-tauri/tauri.conf.json extension/manifest.json
 git commit -m "chore(release): $tag"
 git tag -a "$tag" -m "QR Wi-Fi RS $tag"
 

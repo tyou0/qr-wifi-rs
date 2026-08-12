@@ -56,6 +56,9 @@ jobs:
       - name: Check Tauri GUI crate
         run: cargo check --locked -p qr-wifi-gui
 
+      - name: Test Tauri command contracts
+        run: cargo test --locked -p qr-wifi-gui
+
   packaging:
     name: Packaging and extension checks
     runs-on: ubuntu-latest
@@ -66,6 +69,9 @@ jobs:
 
       - name: Check camera scanner contract
         run: node scripts/test-camera-scanner.mjs
+
+      - name: Check frontend console contract
+        run: node scripts/test-frontend-console.mjs
 
       - name: Check release packaging contract
         run: scripts/test-release-packaging.sh

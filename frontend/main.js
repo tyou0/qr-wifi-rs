@@ -2,6 +2,8 @@ import {
   cameraCaptureDimensions,
   cameraVideoConstraints,
 } from "./scanner.mjs";
+import { appendConsoleText, formatScannedQr } from "./console.mjs";
+import { ScanSession } from "./scanner-state.mjs";
 
 // QR Wi-Fi RS frontend. Vanilla JS — no framework, no bundler.
 // All heavy lifting happens in Rust via Tauri commands (window.__TAURI__).
@@ -22,6 +24,9 @@ const $ = (selector) => {
 };
 
 const output = $("#output");
+const outputViewport = $("#console-viewport");
+const consoleSection = $("#console-section");
+const toggleConsole = $("#toggle-console");
 const status = $("#status");
 const networkList = $("#network-list");
 const networkSearch = $("#network-search");
@@ -38,15 +43,22 @@ let allNetworks = [];
 let scanStream = null;
 let scanTimer = null;
 let isDecoding = false;
+const scanSession = new ScanSession();
 const scanCanvas = document.createElement("canvas");
 const scanCtx = scanCanvas.getContext("2d", { willReadFrequently: true });
+const MAX_CONSOLE_CHARS = 100_000;
 
 function setStatus(message, kind = "idle") {
   status.textContent = message;
   status.dataset.kind = kind;
 }
 function print(text) {
-  output.textContent = text;
+  const placeholder = "Generated status/logs will appear here.";
+  if (output.textContent === placeholder) output.textContent = "";
+  // textContent keeps QR-controlled SSIDs/passwords inert while preserving a
+  // scrollable chronological record for studying decode and connection stages.
+  output.textContent = appendConsoleText(output.textContent, text, MAX_CONSOLE_CHARS);
+  outputViewport.scrollTop = outputViewport.scrollHeight;
 }
 
 function cameraErrorMessage(error) {
@@ -94,7 +106,16 @@ window.addEventListener("keydown", (event) => {
   if (event.key === "Escape") hideQr();
 });
 
-$("#clear-output").addEventListener("click", () => print("Generated status/logs will appear here."));
+$("#clear-output").addEventListener("click", () => {
+  output.textContent = "Generated status/logs will appear here.";
+  outputViewport.scrollTop = 0;
+});
+toggleConsole.addEventListener("click", () => {
+  const collapsed = consoleSection.classList.toggle("collapsed");
+  toggleConsole.setAttribute("aria-expanded", String(!collapsed));
+  toggleConsole.textContent = collapsed ? "Show" : "Hide";
+  if (!collapsed) outputViewport.scrollTop = outputViewport.scrollHeight;
+});
 
 // Tabs
 document.querySelectorAll(".tab-btn").forEach((btn) => {
@@ -202,30 +223,51 @@ $("#custom-form").addEventListener("submit", async (event) => {
 
 // Camera scanning: capture a frame, send the JPEG to Rust for QR decoding.
 async function startScanning() {
+  const token = scanSession.begin();
+  if (token === null) return;
+
+  const startButton = $("#scan-camera");
+  startButton.disabled = true;
+  startButton.classList.add("hidden");
+  $("#stop-scan").classList.remove("hidden");
   print("Initializing camera...");
   setStatus("Accessing camera", "loading");
+  let requestedStream = null;
   try {
-    scanStream = await navigator.mediaDevices.getUserMedia({
+    requestedStream = await navigator.mediaDevices.getUserMedia({
       audio: false,
       video: cameraVideoConstraints(),
     });
+    // Stop may have been pressed while the permission prompt was open. Never
+    // adopt a stream that belongs to an invalidated session.
+    if (!scanSession.activate(token)) {
+      requestedStream.getTracks().forEach((track) => track.stop());
+      return;
+    }
+
+    scanStream = requestedStream;
     const video = $("#scan-video");
     video.srcObject = scanStream;
     await video.play();
-    $("#scan-camera").classList.add("hidden");
-    $("#stop-scan").classList.remove("hidden");
+    if (!scanSession.isScanning(token)) return;
+
+    startButton.disabled = false;
     $("#scanner-container").classList.remove("hidden");
     setStatus("Scanning for QR code", "loading");
     print("Point camera at a Wi-Fi QR code...");
     scheduleNextScan();
   } catch (error) {
+    if (requestedStream && requestedStream !== scanStream) {
+      requestedStream.getTracks().forEach((track) => track.stop());
+    }
+    if (!scanSession.isCurrent(token)) return;
     const message = cameraErrorMessage(error);
     print(message);
     setStatus(message, "error");
     stopScanning();
   }
 }
-function stopScanning() {
+function releaseScanner(enableStart = true) {
   if (scanTimer) {
     clearTimeout(scanTimer);
     scanTimer = null;
@@ -240,9 +282,19 @@ function stopScanning() {
   const start = document.querySelector("#scan-camera");
   const stop = document.querySelector("#stop-scan");
   const container = document.querySelector("#scanner-container");
-  if (start) start.classList.remove("hidden");
+  if (start) {
+    start.disabled = !enableStart;
+    start.classList.remove("hidden");
+  }
   if (stop) stop.classList.add("hidden");
   if (container) container.classList.add("hidden");
+}
+function stopScanning() {
+  // Camera acquisition/decode can be invalidated. A connection already handed
+  // to the OS cannot be cancelled, so cancel() keeps that phase locked and only
+  // suppresses stale UI until the side effect settles.
+  const canStart = scanSession.cancel();
+  releaseScanner(canStart);
 }
 function scheduleNextScan() {
   // Self-rescheduling: only queue the next capture once the previous decode
@@ -252,9 +304,11 @@ function scheduleNextScan() {
 
 async function captureAndDecode() {
   scanTimer = null;
+  const token = scanSession.token;
   const video = $("#scan-video");
+  if (!scanSession.isScanning(token)) return;
   if (!scanStream || video.paused || video.ended) {
-    if (scanStream) scheduleNextScan();
+    if (scanStream && scanSession.isScanning(token)) scheduleNextScan();
     return;
   }
   if (isDecoding || video.readyState < video.HAVE_ENOUGH_DATA) {
@@ -274,19 +328,39 @@ async function captureAndDecode() {
   scanCtx.drawImage(video, 0, 0, w, h);
   const dataUrl = scanCanvas.toDataURL("image/jpeg", 0.92);
   const base64 = dataUrl.slice("data:image/jpeg;base64,".length);
+  let decoded;
   try {
-    const credentials = await invoke("decode_qr", { imageBase64: base64 });
-    isDecoding = false;
-    stopScanning();
-    print(`Scanned: ${credentials.ssid}`);
-    setStatus(`Connecting to ${credentials.ssid}...`, "loading");
-    await invoke("connect_network", { credentials });
-    print(`Connected to ${credentials.ssid}.`);
-    setStatus("Connected", "success");
+    decoded = await invoke("decode_qr", { imageBase64: base64 });
   } catch {
-    // No QR in this frame yet — keep scanning.
     isDecoding = false;
-    scheduleNextScan();
+    if (scanSession.isScanning(token)) scheduleNextScan();
+    return;
+  }
+
+  isDecoding = false;
+  if (!scanSession.beginConnecting(token)) return;
+  releaseScanner(false);
+  print(formatScannedQr(decoded));
+  setStatus(`Connecting to ${decoded.credentials.ssid}...`, "loading");
+  const startButton = $("#scan-camera");
+  let connectionError = null;
+  try {
+    await invoke("connect_network", { credentials: decoded.credentials });
+  } catch (error) {
+    connectionError = error;
+  }
+
+  const shouldReport = scanSession.settleConnection(token);
+  startButton.disabled = false;
+  if (!shouldReport) {
+    setStatus("Ready", "idle");
+    return;
+  }
+  if (connectionError === null) {
+    print(`Connected to ${decoded.credentials.ssid}.`);
+    setStatus("Connected", "success");
+  } else {
+    handleError(connectionError);
   }
 }
 $("#scan-camera").addEventListener("click", startScanning);

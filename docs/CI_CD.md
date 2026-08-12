@@ -1,5 +1,9 @@
 # CI/CD
 
+This page is the concise operator runbook. For the teaching-oriented architecture,
+trust boundaries, secrets, store-by-store publication blueprints, verification,
+and rollback procedures, read [`DEPLOYMENT_GUIDE.md`](DEPLOYMENT_GUIDE.md).
+
 This repo has GitHub Actions workflows and a small Gitea Actions CI workflow.
 
 ## CI
@@ -48,8 +52,9 @@ Run from a clean, synchronized `main` checkout on Podman:
 ./scripts/release-all.sh 0.2.2
 ```
 
-The script validates Gitea/GitHub refs, updates `Cargo.toml`, `Cargo.lock`, and
-`src-tauri/tauri.conf.json`, runs the packaging contract plus Rust release gates,
+The script validates Gitea/GitHub refs, updates `Cargo.toml`, `Cargo.lock`,
+`src-tauri/tauri.conf.json`, and `extension/manifest.json`, runs the packaging
+contract plus Rust release gates,
 creates an annotated `v0.2.2` tag, and atomically pushes `main` and the tag to the
 canonical `gitea` remote. Gitea's sync-on-commit push mirror then sends both refs
 to GitHub. The mirrored `v*` tag triggers GitHub Actions and creates the GitHub
