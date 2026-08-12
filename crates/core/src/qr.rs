@@ -2,7 +2,9 @@
 //!
 //! The matrix is produced by the [`qrcode`](https://crates.io/crates/qrcode)
 //! crate and turned into a PNG or terminal art through its `render` API.
-//! Decoding (for camera-scan flows) uses [`rqrr`](https://crates.io/crates/rqrr).
+//! Decoding (for camera-scan flows) uses fast [`rqrr`](https://crates.io/crates/rqrr)
+//! first and a QR-only [`rxing`](https://crates.io/crates/rxing) fallback for
+//! styled, inverted, or otherwise difficult standards-compliant QR codes.
 
 use std::io::Cursor;
 
@@ -22,6 +24,7 @@ const MODULE_SCALE: u32 = 8;
 /// Limits applied before decoding untrusted camera or extension images.
 const MAX_IMAGE_BYTES: u64 = 12 * 1024 * 1024;
 const MAX_IMAGE_DIMENSION: u32 = 8192;
+const MAX_IMAGE_PIXELS: u64 = 4 * 1024 * 1024;
 const MAX_IMAGE_ALLOC: u64 = 128 * 1024 * 1024;
 
 /// Build a QR matrix for the given payload.
@@ -78,11 +81,7 @@ pub fn to_unicode(payload: &str) -> Result<String> {
 
 /// Decode the first QR code found in an image.
 pub fn decode_image(img: DynamicImage) -> Result<String> {
-    if img.width() > MAX_IMAGE_DIMENSION || img.height() > MAX_IMAGE_DIMENSION {
-        return Err(CoreError::QrDecode(format!(
-            "image dimensions exceed {MAX_IMAGE_DIMENSION}x{MAX_IMAGE_DIMENSION}"
-        )));
-    }
+    ensure_image_dimensions(img.width(), img.height())?;
 
     // rqrr is fast for conventional QR codes. Keep it as the primary decoder,
     // then fall back to ZXing's more tolerant detector for customized phone QR
@@ -131,6 +130,14 @@ pub fn decode_image_path(path: &std::path::Path) -> Result<String> {
 fn decode_image_bytes(bytes: &[u8]) -> Result<String> {
     ensure_image_size(bytes.len() as u64)?;
 
+    let dimensions_reader = ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|e| CoreError::QrDecode(e.to_string()))?;
+    let (width, height) = dimensions_reader
+        .into_dimensions()
+        .map_err(|e| CoreError::QrDecode(e.to_string()))?;
+    ensure_image_dimensions(width, height)?;
+
     let mut reader = ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()
         .map_err(|e| CoreError::QrDecode(e.to_string()))?;
@@ -144,6 +151,21 @@ fn decode_image_bytes(bytes: &[u8]) -> Result<String> {
         .decode()
         .map_err(|e| CoreError::QrDecode(e.to_string()))?;
     decode_image(image)
+}
+
+fn ensure_image_dimensions(width: u32, height: u32) -> Result<()> {
+    if width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION {
+        return Err(CoreError::QrDecode(format!(
+            "image dimensions exceed {MAX_IMAGE_DIMENSION}x{MAX_IMAGE_DIMENSION}"
+        )));
+    }
+    let pixel_count = u64::from(width) * u64::from(height);
+    if pixel_count > MAX_IMAGE_PIXELS {
+        return Err(CoreError::QrDecode(format!(
+            "image pixel count is {pixel_count}; maximum is {MAX_IMAGE_PIXELS}"
+        )));
+    }
+    Ok(())
 }
 
 fn ensure_image_size(size: u64) -> Result<()> {
@@ -208,6 +230,23 @@ mod tests {
     fn rejects_images_above_encoded_size_limit() {
         let error = ensure_image_size(MAX_IMAGE_BYTES + 1).unwrap_err();
         assert!(error.to_string().contains("maximum"));
+    }
+
+    #[test]
+    fn rejects_images_above_pixel_limit() {
+        let image = DynamicImage::new_luma8(2049, 2049);
+        let error = decode_image(image).unwrap_err();
+        assert!(error.to_string().contains("pixel count"));
+    }
+
+    #[test]
+    fn rejects_encoded_image_above_pixel_limit_before_decode() {
+        let mut png = Cursor::new(Vec::new());
+        DynamicImage::new_luma8(2049, 2049)
+            .write_to(&mut png, ImageFormat::Png)
+            .unwrap();
+        let error = decode_image_bytes(png.get_ref()).unwrap_err();
+        assert!(error.to_string().contains("pixel count"));
     }
 
     #[test]
