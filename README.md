@@ -360,6 +360,20 @@ The GUI has Share / Custom / Connect tabs. Camera scanning is decoded in Rust
 (`decode_qr` command) so no JS QR library is needed. Generated QR codes show
 the image and the raw `WIFI:` payload string at the bottom.
 
+### Linux camera prerequisites
+
+The Linux desktop bundle enables WebKitGTK media streams and grants camera
+capture only to its own per-process loopback UI origin. On Arch, install the
+WebKit/GStreamer camera stack before launching the app:
+
+```sh
+sudo pacman -S webkit2gtk-4.1 gst-plugins-good gst-plugin-pipewire
+```
+
+Also ensure that the desktop session has permission to use the camera (for
+example through PipeWire/xDG Desktop Portal). Windows still honors the global
+Settings > Privacy and security > Camera desktop-app switch.
+
 ## Browser extension (Native Messaging)
 
 The extension shares/connects to Wi-Fi by talking to the `qr-wifi-host` binary
