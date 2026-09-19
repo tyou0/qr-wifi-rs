@@ -8,6 +8,7 @@
 //! the GUI shares one implementation with the CLI, TUI, and the browser-host.
 
 mod command_names;
+mod media_capture;
 
 use qr_wifi_core::{
     decode_image_base64, default_adapter, networks, parse_payload,
@@ -161,11 +162,12 @@ fn main() {
                 },
             );
             app.add_capability(capability)?;
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
+            let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url.clone()))
                 .title("QR Wi-Fi RS")
                 .inner_size(480.0, 720.0)
                 .resizable(true)
                 .build()?;
+            media_capture::configure(&window, url.origin().ascii_serialization().as_str())?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

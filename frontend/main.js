@@ -68,6 +68,13 @@ function cameraErrorMessage(error) {
     return "Camera API unavailable in this webview.";
   }
   if (name === "NotAllowedError" || name === "SecurityError") {
+    const userAgent = navigator.userAgent ?? "";
+    if (userAgent.includes("Windows")) {
+      return "Camera permission denied. Enable desktop-app camera access in Windows Settings > Privacy and security > Camera.";
+    }
+    if (userAgent.includes("Linux")) {
+      return "Camera permission denied. Allow camera access for QR Wi-Fi RS; on Arch, install webkit2gtk-4.1, gst-plugins-good, and gst-plugin-pipewire.";
+    }
     return "Camera permission denied. Allow camera access for QR Wi-Fi RS in macOS Privacy settings.";
   }
   if (name === "NotFoundError" || name === "OverconstrainedError") {

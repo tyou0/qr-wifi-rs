@@ -59,5 +59,7 @@ assert.match(
 );
 assert.doesNotMatch(main, /const w = 360/);
 assert.match(main, /toDataURL\("image\/jpeg", 0\.92\)/);
+assert.match(main, /userAgent\.includes\("Windows"\)/);
+assert.match(main, /userAgent\.includes\("Linux"\)/);
 
 console.log("camera scanner contract: PASS");
