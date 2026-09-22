@@ -62,4 +62,21 @@ assert.match(main, /toDataURL\("image\/jpeg", 0\.92\)/);
 assert.match(main, /userAgent\.includes\("Windows"\)/);
 assert.match(main, /userAgent\.includes\("Linux"\)/);
 
+// macOS camera access crosses a bundle/OS boundary. Keep the required metadata
+// and the local loopback transport contract under test so a future packaging
+// cleanup cannot silently turn a working scanner into a permanent permission
+// denial on physical Macs.
+const [infoPlist, entitlements, tauriConfig, rustMain] = await Promise.all([
+  readFile(new URL("../src-tauri/Info.plist", import.meta.url), "utf8"),
+  readFile(new URL("../src-tauri/entitlements.plist", import.meta.url), "utf8"),
+  readFile(new URL("../src-tauri/tauri.conf.json", import.meta.url), "utf8"),
+  readFile(new URL("../src-tauri/src/main.rs", import.meta.url), "utf8"),
+]);
+assert.match(infoPlist, /<key>NSCameraUsageDescription<\/key>/);
+assert.match(infoPlist, /<key>NSAllowsLocalNetworking<\/key>\s*<true\/>/);
+assert.match(entitlements, /<key>com\.apple\.security\.device\.camera<\/key>\s*<true\/>/);
+assert.equal(JSON.parse(tauriConfig).bundle.macOS.entitlements, "entitlements.plist");
+assert.match(rustMain, /TcpListener::bind\(\("127\.0\.0\.1", 0\)\)/);
+assert.match(rustMain, /WebviewUrl::External\(url\.clone\(\)\)/);
+
 console.log("camera scanner contract: PASS");
