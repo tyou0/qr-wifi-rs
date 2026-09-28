@@ -23,6 +23,7 @@ It runs on pushes, pull requests, and manual dispatch:
 - Chrome/Firefox extension lint
 - Homebrew formula Ruby syntax check
 - native-host installer syntax and behavior test
+- combined installer installation, upgrade, missing-artifact, and wrong-platform tests
 
 The Rust job runs on:
 
@@ -77,6 +78,11 @@ artifact collisions when Gitea synchronizes the release tag to GitHub.
 
 The release also contains:
 
+- `qr-wifi-rs-VERSION-PLATFORM.tar.gz`: desktop app + CLI + TUI + native host,
+  with `install.sh` and `install.ps1` for one-command per-user installation.
+  Linux binaries are built on Ubuntu 24.04, then installed and launched in an
+  Arch Linux container before publication. Windows runs the installer under
+  PowerShell 5.1 and starts the installed desktop app. macOS installs the app bundle.
 - `qr-wifi-rs-browser-extension-0.2.2-unsigned.zip`
 - `qr-wifi-rs-0.2.2-SHA256SUMS.txt`
 

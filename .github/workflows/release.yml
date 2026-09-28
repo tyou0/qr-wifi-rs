@@ -77,7 +77,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             target: linux-x86_64
             bundles: appimage,deb,rpm
           - os: windows-latest
@@ -104,14 +104,60 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf rpm
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf rpm xvfb desktop-file-utils
           sudo apt-get install -y libfuse2 || sudo apt-get install -y libfuse2t64
 
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked --version "2.11.4"
 
+      - name: Build terminal tools for combined installer
+        run: cargo build --release --locked -p qr-wifi-cli -p qr-wifi-tui -p qr-wifi-host
+
+      - name: Verify Rust and desktop contracts before release
+        run: |
+          cargo test --locked
+          cargo test --locked -p qr-wifi-gui
+
       - name: Build desktop bundles
-        run: cargo tauri build --bundles "${{ matrix.bundles }}"
+        run: cargo tauri build --ci --bundles "${{ matrix.bundles }}" -- --locked
+
+      - name: Test combined installation and upgrades
+        run: python scripts/test-combined-install.py
+
+      - name: Package combined installer
+        shell: bash
+        run: |
+          version=$(python -c 'import json; print(json.load(open("src-tauri/tauri.conf.json"))["version"])')
+          bash scripts/package-suite.sh "$version" "${{ matrix.target }}"
+          mkdir -p "$RUNNER_TEMP/combined-extracted"
+          tar -xzf "dist/qr-wifi-rs-${version}-${{ matrix.target }}.tar.gz" -C "$RUNNER_TEMP/combined-extracted"
+
+      - name: Smoke test Unix combined archive
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          suite=("$RUNNER_TEMP"/combined-extracted/*)
+          bash "${suite[0]}/install.sh" --prefix "$RUNNER_TEMP/combined-installed" --applications-dir "$RUNNER_TEMP/Applications"
+          "$RUNNER_TEMP/combined-installed/bin/qr-wifi" --help
+          test -x "$RUNNER_TEMP/combined-installed/bin/qr-wifi-tui"
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            desktop-file-validate "$RUNNER_TEMP/combined-installed/share/applications/com.thetomyou.qrwifirs.desktop"
+            xvfb-run -a bash -c '"$RUNNER_TEMP/combined-installed/bin/qr-wifi-gui" & app=$!; sleep 5; kill -0 "$app"; result=$?; kill "$app" 2>/dev/null || true; exit "$result"'
+          fi
+
+      - name: Smoke test Windows combined archive (PowerShell 5.1)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $suite = Get-ChildItem "$env:RUNNER_TEMP\combined-extracted" -Directory | Select-Object -First 1
+          & "$($suite.FullName)\install.ps1" -InstallDirectory "$env:RUNNER_TEMP\combined-installed" -ShortcutDirectory "$env:RUNNER_TEMP\shortcuts" -NoPathUpdate
+          & "$env:RUNNER_TEMP\combined-installed\bin\qr-wifi.exe" --help
+          if ($LASTEXITCODE -ne 0) { throw 'Installed CLI failed.' }
+          $app = Start-Process "$env:RUNNER_TEMP\combined-installed\bin\qr-wifi-gui.exe" -PassThru
+          Start-Sleep -Seconds 5
+          if ($app.HasExited) { throw 'Installed desktop app exited unexpectedly.' }
+          Stop-Process -Id $app.Id
 
       - name: Verify ad-hoc macOS signature
         if: runner.os == 'macOS'
@@ -188,10 +234,39 @@ jobs:
           name: qr-wifi-rs-browser-extension-${{ github.ref_name }}
           path: dist/*.zip
 
+  arch-install:
+    name: Arch Linux combined archive
+    needs: desktop-artifacts
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Install Arch runtime and validation tools
+        run: pacman -Syu --noconfirm --needed nodejs python webkit2gtk-4.1 openssl gtk3 libappindicator-gtk3 librsvg networkmanager gst-plugins-good gst-plugin-pipewire xorg-server-xvfb xorg-xauth dbus desktop-file-utils
+
+      - name: Download Linux packages
+        uses: actions/download-artifact@v8
+        with:
+          name: qr-wifi-rs-desktop-${{ github.ref_name }}-linux-x86_64
+          path: dist
+
+      - name: Install combined archive on Arch and launch desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir extracted
+          tar -xzf dist/qr-wifi-rs-*-linux-x86_64.tar.gz -C extracted
+          suite=(extracted/*)
+          bash "${suite[0]}/install.sh"
+          "$HOME/.local/bin/qr-wifi" --help
+          desktop-file-validate "$HOME/.local/share/applications/com.thetomyou.qrwifirs.desktop"
+          xvfb-run -a bash -c '"$HOME/.local/bin/qr-wifi-gui" & app=$!; sleep 5; kill -0 "$app"; result=$?; kill "$app" 2>/dev/null || true; exit "$result"'
+        env:
+          WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS: '1'
+
   publish-github-release:
     name: Publish GitHub release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [cli-artifacts, desktop-artifacts, extension-artifact]
+    needs: [cli-artifacts, desktop-artifacts, extension-artifact, arch-install]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -217,5 +292,6 @@ jobs:
           files: dist/*
           generate_release_notes: true
           body: |
+            Combined desktop + CLI + TUI + native-host installation: download qr-wifi-rs-VERSION-PLATFORM.tar.gz, extract, then run bash install.sh (macOS/Linux) or powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 (Windows). Rust is not required. See README for OS runtime prerequisites. Separate desktop-* installers remain desktop-only.
             Signing status: macOS bundles are ad-hoc signed; Windows installers and the browser extension are unsigned.
             Verify downloaded files against the versioned SHA256SUMS file.

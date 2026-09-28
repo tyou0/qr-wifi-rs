@@ -55,47 +55,118 @@ frontends.
 
 ## Prerequisites
 
-- **Rust toolchain** (stable, via <https://rustup.rs>): `rustc` + `cargo`.
+- **Rust toolchain** (stable, via <https://rustup.rs>, source builds only): `rustc` + `cargo`.
   Confirm with `cargo --version`.
 - **Tauri CLI** (only for the desktop GUI): `cargo install tauri-cli --version "^2"`.
-- OS Wi-Fi tooling (already present on each platform):
+- OS Wi-Fi tooling:
   `networksetup`/`ipconfig`/`security` (macOS), `nmcli` (Linux, NetworkManager),
   `netsh` (Windows).
 
 ## Install
 
-Fast paths:
+### Desktop + CLI + TUI together
+
+The combined installer installs **all four** programs: the desktop app,
+`qr-wifi` (CLI), `qr-wifi-tui`, and `qr-wifi-host`. It creates a desktop launcher
+and installs per user, without `sudo`. Close the app before upgrading.
+
+From a source checkout, install the prerequisites below, then run **one** command
+from the repository root (the script also installs Tauri CLI if missing):
 
 ```sh
-# Homebrew personal tap (macOS desktop app + CLI/TUI/native host)
-brew trust tyou0/qr-wifi-rs
-brew tap tyou0/qr-wifi-rs
-brew install qr-wifi-rs
-
-# Rust package manager install (CLI/TUI/native host)
-cargo install --path crates/cli
-cargo install --path crates/tui
-cargo install --path crates/host
-
-# Desktop setup installer/bundle for the current OS
-cargo install tauri-cli --version "^2"
-cargo tauri build
-
-# Browser native-host registration (macOS/Linux)
-scripts/install-native-host.sh --chrome-extension-id <chrome-extension-id>
+# macOS, Ubuntu, or Arch Linux (Bash)
+bash scripts/install.sh
 ```
 
-What this gives you:
+```powershell
+# Windows PowerShell 5.1 or PowerShell 7
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
+```
 
-- `qr-wifi` and `qr-wifi-tui` on `~/.cargo/bin`.
-- Tauri GUI installer artifacts from `cargo tauri build`
-  (macOS dmg/app, Linux deb/AppImage, Windows msi/nsis depending on Tauri target).
-- Chrome/Chromium/Firefox Native Messaging manifests pointing at
-  `~/.local/bin/qr-wifi-host` via `scripts/install-native-host.sh`.
+These commands actually install the desktop app; no separate DMG/MSI/DEB step
+is needed. Builds target the OS and CPU running the script. A Linux build does
+not create a Windows or macOS application.
 
-For published releases, the same crates are intended to be installable with
-`cargo install qr-wifi-cli`, `cargo install qr-wifi-tui`, and
-`cargo install qr-wifi-host`; until then, use `--path`.
+| System | Desktop installation | Terminal commands |
+| --- | --- | --- |
+| macOS | `~/Applications/QR Wi-Fi RS.app` | `~/.local/bin` |
+| Ubuntu / Arch | Applications menu, launcher in `~/.local/share/applications` | `~/.local/bin` |
+| Windows | Start menu, files in `%LOCALAPPDATA%\Programs\QR Wi-Fi RS` | Installer adds its `bin` directory to user PATH; reopen terminal |
+
+On macOS/Linux, add this to your shell profile if `~/.local/bin` is not on PATH:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+### Install a combined release (no Rust required)
+
+Download `qr-wifi-rs-VERSION-PLATFORM.tar.gz` from
+[Releases](https://github.com/tyou0/qr-wifi-rs/releases/latest), verify it against
+the release's SHA256SUMS file, and extract it. Platforms: `linux-x86_64`,
+`windows-x86_64`, `macos-arm64`, and `macos-x86_64`. Inside the extracted folder:
+
+```sh
+# macOS / Linux
+bash install.sh
+```
+
+```powershell
+# Windows; tar -xf also extracts .tar.gz on Windows 10/11
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+The Linux archive targets Ubuntu 24.04+ and current Arch with the runtime
+dependencies below. For older Ubuntu releases, build from source on that
+release. Downloaded macOS apps are ad-hoc signed, not notarized; Windows
+binaries are unsigned. The separate `desktop-*` packages still contain only
+the desktop app; choose the combined archive for CLI/TUI too.
+
+### OS prerequisites
+
+See [Tauri's prerequisites](https://v2.tauri.app/start/prerequisites/) for details.
+
+**Ubuntu 22.04+ (source build):**
+
+```sh
+sudo apt update
+sudo apt install build-essential pkg-config curl libwebkit2gtk-4.1-dev \
+  libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev \
+  network-manager gstreamer1.0-plugins-good
+```
+
+For the prebuilt Linux archive on Ubuntu 24.04+, only runtime packages are needed:
+
+```sh
+sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0t64 libayatana-appindicator3-1 \
+  librsvg2-2 network-manager gstreamer1.0-plugins-good
+```
+
+**Arch Linux (source build):**
+
+```sh
+sudo pacman -Syu --needed base-devel pkgconf curl webkit2gtk-4.1 openssl \
+  gtk3 libappindicator-gtk3 librsvg networkmanager gst-plugins-good gst-plugin-pipewire
+```
+
+For the prebuilt archive, omit `base-devel`, `pkgconf`, and `curl`.
+Linux Wi-Fi operations require **NetworkManager managing the Wi-Fi interface**;
+an iwd-only setup is not supported. Installing NetworkManager does not switch
+your existing network configuration automatically.
+
+**macOS (source build):** install Rust and Xcode Command Line Tools (`xcode-select --install`).
+
+**Windows 10/11:** the desktop runtime requires
+[Microsoft Edge WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/).
+Source builds additionally need Rust's **MSVC** toolchain and Visual Studio
+Build Tools with **Desktop development with C++** (including the Windows SDK).
+
+Browser extension registration remains an optional separate step. For the
+combined macOS/Linux installation:
+
+```sh
+scripts/install-native-host.sh --skip-build --host-path "$HOME/.local/bin/qr-wifi-host" --chrome-extension-id <chrome-extension-id>
+```
 
 ### Homebrew
 
@@ -350,7 +421,8 @@ cargo install tauri-cli --version "^2"
 # Run in dev mode (hot frontend + Rust)
 cargo tauri dev
 
-# Produce an installer/bundle for the current OS (macOS dmg, Linux AppImage/deb, Windows msi/exe)
+# Build desktop-only distribution packages for the current OS.
+# For desktop + CLI + TUI installation, use the combined installer above.
 cargo tauri build
 
 # The resulting app binary is under target/release/

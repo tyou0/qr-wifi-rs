@@ -53,6 +53,9 @@ jobs:
       - name: Test default workspace crates
         run: cargo test --locked
 
+      - name: Test combined installation and upgrades
+        run: python scripts/test-combined-install.py
+
       - name: Check Tauri GUI crate
         run: cargo check --locked -p qr-wifi-gui
 
