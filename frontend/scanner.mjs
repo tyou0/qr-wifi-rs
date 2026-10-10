@@ -4,6 +4,15 @@
 
 export const MAX_CAMERA_CAPTURE_WIDTH = 1280;
 
+// HTMLMediaElement.HAVE_CURRENT_DATA: drawImage() needs only the current frame.
+// Never wait for HAVE_ENOUGH_DATA; WebKitGTK reports a playing live camera as
+// HAVE_FUTURE_DATA indefinitely, so Linux would skip every frame.
+const HAVE_CURRENT_DATA = 2;
+
+export function hasCameraFrame({ readyState, videoWidth, videoHeight }) {
+  return readyState >= HAVE_CURRENT_DATA && videoWidth > 0 && videoHeight > 0;
+}
+
 export function cameraCaptureDimensions(
   videoWidth,
   videoHeight,

@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import {
   cameraCaptureDimensions,
   cameraVideoConstraints,
+  hasCameraFrame,
 } from "../frontend/scanner.mjs";
 import { ScanSession } from "../frontend/scanner-state.mjs";
 
@@ -24,6 +25,21 @@ assert.deepEqual(cameraVideoConstraints(), {
   width: { ideal: 1280 },
   height: { ideal: 720 },
 });
+
+const videoAt = (readyState, videoWidth = 1280, videoHeight = 720) => ({
+  readyState,
+  videoWidth,
+  videoHeight,
+});
+assert.equal(
+  hasCameraFrame(videoAt(3)),
+  true,
+  "WebKitGTK keeps a playing camera at HAVE_FUTURE_DATA; its frames must still be scanned",
+);
+assert.equal(hasCameraFrame(videoAt(2)), true);
+assert.equal(hasCameraFrame(videoAt(4)), true);
+assert.equal(hasCameraFrame(videoAt(1)), false, "metadata alone has no frame to draw");
+assert.equal(hasCameraFrame(videoAt(4, 0, 0)), false);
 
 const sessions = new ScanSession();
 const first = sessions.begin();
@@ -58,6 +74,8 @@ assert.match(
   /cameraCaptureDimensions\s*\(\s*video\.videoWidth,\s*video\.videoHeight,?\s*\)/,
 );
 assert.doesNotMatch(main, /const w = 360/);
+assert.match(main, /hasCameraFrame\(video\)/);
+assert.doesNotMatch(main, /HAVE_ENOUGH_DATA/, "Linux cameras never report HAVE_ENOUGH_DATA while playing");
 assert.match(main, /toDataURL\("image\/jpeg", 0\.92\)/);
 assert.match(main, /userAgent\.includes\("Windows"\)/);
 assert.match(main, /userAgent\.includes\("Linux"\)/);
@@ -78,5 +96,15 @@ assert.match(entitlements, /<key>com\.apple\.security\.device\.camera<\/key>\s*<
 assert.equal(JSON.parse(tauriConfig).bundle.macOS.entitlements, "entitlements.plist");
 assert.match(rustMain, /TcpListener::bind\(\("127\.0\.0\.1", 0\)\)/);
 assert.match(rustMain, /WebviewUrl::External\(url\.clone\(\)\)/);
+
+// Sync Tauri commands run on the main thread, which also drives the webview.
+// Decoding each scan frame there freezes the camera preview and Stop button.
+for (const command of ["decode_qr", "connect_network"]) {
+  assert.match(
+    rustMain,
+    new RegExp(`#\\[tauri::command\\(async\\)\\]\\s*fn ${command}\\(`),
+    `${command} must run off the main thread`,
+  );
+}
 
 console.log("camera scanner contract: PASS");
