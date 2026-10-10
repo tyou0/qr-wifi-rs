@@ -66,12 +66,15 @@ All four binaries and the Tauri GUI call into `qr-wifi-core`; no Wi-Fi logic liv
 
 Each OS implements the `WifiAdapter` trait:
 
-| Method      | macOS (`networksetup`/`security`) | Linux (`nmcli`) | Windows (`netsh`) |
+| Method      | macOS (`networksetup`/`security`) | Linux (`nmcli`) | Windows (Native Wi-Fi API) |
 | ------------| ----------------------------------- | --------------- | ------------------ |
-| `current_ssid` | Multiple fallback methods including syslog parsing | `nmcli -g` | `netsh wlan show interfaces` |
-| `list_networks` | `networksetup -listpreferredwirelessnetworks` | `nmcli device wifi list` | `netsh wlan show networks` |
-| `get_credentials` | Keychain via `security find-internet-password` | `nmcli -s connection show` | `netsh wlan show profiles ... key=clear` |
-| `connect` | `networksetup -setairportnetwork` | `nmcli device wifi connect` | `netsh wlan connect` |
+| `current_ssid` | Multiple fallback methods including syslog parsing | `nmcli -t` | `WlanQueryInterface` |
+| `list_networks` | `networksetup -listpreferredwirelessnetworks` | `nmcli device wifi list` | `WlanGetAvailableNetworkList` |
+| `get_credentials` | Keychain via `security find-internet-password` | `nmcli -s connection show uuid ...` | `WlanGetProfile` XML |
+| `connect` | `networksetup -setairportnetwork` | `nmcli device wifi connect` | `WlanSetProfile` / `WlanConnect` |
+
+Pure adapter parsing/profile tests compile on every test host. Windows FFI lives
+in `crates/core/src/platform/windows/native.rs` and only compiles for Windows.
 
 macOS SSID detection has special handling for when the OS returns `<redacted>` — it falls back through several methods including parsing `log show` for `airportd` entries.
 

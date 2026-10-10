@@ -1,24 +1,31 @@
 //! Platform Wi-Fi adapters.
 //!
 //! Each operating system has its own module implementing [`WifiAdapter`]. The
-//! adapters shell out to native tooling (`networksetup`/`ipconfig`,
-//! `nmcli`, `netsh`) so no C bindings are required.
+//! macOS and Linux adapters shell out to native tooling
+//! (`networksetup`/`ipconfig`, `nmcli`). Windows uses the Native Wi-Fi API so
+//! network names and credentials do not depend on localized command output.
 
+#[cfg(any(test, target_os = "linux", target_os = "macos"))]
 mod command;
-#[cfg(target_os = "linux")]
+// Exercise every adapter's parsing and command construction on every test host.
+#[cfg(any(test, target_os = "linux"))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod linux;
-#[cfg(target_os = "macos")]
+#[cfg(any(test, target_os = "macos"))]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod macos;
-#[cfg(target_os = "windows")]
+#[cfg(any(test, target_os = "windows"))]
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 mod windows;
 
 use crate::error::Result;
 use crate::types::{WifiCredentials, WifiNetwork};
 
+#[cfg(any(test, target_os = "linux", target_os = "macos"))]
 pub(crate) use command::run;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(any(test, target_os = "linux", target_os = "macos"))]
 pub(crate) use command::run_redacted;
-#[cfg(target_os = "macos")]
+#[cfg(any(test, target_os = "macos"))]
 pub(crate) use command::try_capture;
 
 /// OS-level Wi-Fi operations used by every frontend (CLI/TUI/GUI/IPC).

@@ -15,7 +15,7 @@ GitHub CI lives at:
 It runs on pushes, pull requests, and manual dispatch:
 
 - `cargo fmt --all -- --check`
-- `cargo clippy --locked --all-targets -- -D warnings`
+- `cargo clippy --locked --workspace --all-targets -- -D warnings`
 - `cargo test --locked`
 - `cargo check --locked -p qr-wifi-gui`
 - process-level Native Messaging host test
@@ -31,6 +31,12 @@ The Rust job runs on:
 - Windows x86_64
 - macOS ARM64
 - macOS Intel
+
+All adapter parser/profile tests run on each host, while Windows FFI tests run
+on Windows. A separate Linux job tests the default workspace crates with Rust
+1.88, the minimum declared in `Cargo.toml`. That job also tests credential reads
+from real NetworkManager using inactive fixture profiles in a disposable
+container. Hardware Wi-Fi and camera behavior need manual verification on each OS.
 
 Gitea CI lives at:
 

@@ -125,8 +125,7 @@ pub fn parse_payload(payload: &str) -> Result<WifiCredentials> {
     }
 
     let ssid = ssid
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
+        .filter(|s| !s.trim().is_empty())
         .ok_or_else(|| CoreError::Payload("payload is missing SSID".into()))?;
 
     let password = if security == WifiSecurity::Nopass {
@@ -236,6 +235,14 @@ mod tests {
         let payload = build_payload(&original);
         let parsed = parse_payload(&payload).unwrap();
         assert_eq!(parsed, original);
+    }
+
+    #[test]
+    fn round_trips_unicode_ssid_with_significant_edge_spaces() {
+        let original = creds("  카페:Guest\\WiFi  ", WifiSecurity::Wpa2)
+            .with_password("  fixture:p\\ass  ")
+            .hidden(true);
+        assert_eq!(parse_payload(&build_payload(&original)).unwrap(), original);
     }
 
     #[test]

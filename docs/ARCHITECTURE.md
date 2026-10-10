@@ -127,7 +127,8 @@ crates/core/src/
 │   ├── command.rs   # Shell execution helpers
 │   ├── macos.rs     # macOS (networksetup, security, syslog)
 │   ├── linux.rs     # Linux (nmcli)
-│   └── windows.rs   # Windows (netsh)
+│   ├── windows.rs   # Windows WLAN profile encoding/decoding
+│   └── windows/native.rs # Owned Native Wi-Fi API handles and buffers
 ├── service.rs       # High-level feature functions
 ├── ipc.rs           # Native Messaging protocol
 └── examples/        # Runnable examples
@@ -161,7 +162,7 @@ pub trait WifiAdapter: Send + Sync {
 
 **Why a trait?**
 
-- macOS, Linux, and Windows use completely different commands
+- macOS, Linux, and Windows use different native commands or APIs
 - The trait defines **what** we need, not **how** to get it
 - Frontends don't care which OS they're running on
 
@@ -173,10 +174,10 @@ pub fn default_adapter() -> Box<dyn WifiAdapter> {
     return Box::new(macos::MacosAdapter::new());
 
     #[cfg(target_os = "linux")]
-    return Box::new(linux::LinuxAdapter::new());
+    return Box::new(linux::LinuxAdapter);
 
     #[cfg(target_os = "windows")]
-    return Box::new(windows::WindowsAdapter::new());
+    return Box::new(windows::WindowsAdapter);
 }
 ```
 

@@ -6,6 +6,7 @@
 //! handlers are deliberately limited to the exact loopback origin allocated to
 //! this process.
 
+#[cfg(any(test, target_os = "linux", target_os = "windows"))]
 pub fn is_trusted_loopback_origin(uri: &str, origin: &str) -> bool {
     uri == origin
         || uri

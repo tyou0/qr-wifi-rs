@@ -74,36 +74,6 @@ fn decode_qr(image_base64: String) -> Result<DecodedQr, String> {
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use qr_wifi_core::WifiSecurity;
-    use serde_json::json;
-
-    #[test]
-    fn decoded_qr_serializes_payload_and_full_credentials() {
-        let decoded = DecodedQr {
-            payload: "WIFI:S:Fixture;T:WPA;P:test-password;H:true;;".into(),
-            credentials: WifiCredentials::new("Fixture", WifiSecurity::Wpa)
-                .with_password("test-password")
-                .hidden(true),
-        };
-
-        assert_eq!(
-            serde_json::to_value(decoded).unwrap(),
-            json!({
-                "payload": "WIFI:S:Fixture;T:WPA;P:test-password;H:true;;",
-                "credentials": {
-                    "ssid": "Fixture",
-                    "security": "WPA",
-                    "password": "test-password",
-                    "hidden": true
-                }
-            })
-        );
-    }
-}
-
 fn main() {
     // WKWebView rejects camera access from Tauri's custom `tauri://` scheme.
     // Bind first, before creating the webview, so another local process cannot
@@ -181,4 +151,34 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use qr_wifi_core::WifiSecurity;
+    use serde_json::json;
+
+    #[test]
+    fn decoded_qr_serializes_payload_and_full_credentials() {
+        let decoded = DecodedQr {
+            payload: "WIFI:S:Fixture;T:WPA;P:test-password;H:true;;".into(),
+            credentials: WifiCredentials::new("Fixture", WifiSecurity::Wpa)
+                .with_password("test-password")
+                .hidden(true),
+        };
+
+        assert_eq!(
+            serde_json::to_value(decoded).unwrap(),
+            json!({
+                "payload": "WIFI:S:Fixture;T:WPA;P:test-password;H:true;;",
+                "credentials": {
+                    "ssid": "Fixture",
+                    "security": "WPA",
+                    "password": "test-password",
+                    "hidden": true
+                }
+            })
+        );
+    }
 }
