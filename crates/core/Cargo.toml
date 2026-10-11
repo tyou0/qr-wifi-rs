@@ -23,9 +23,9 @@ rxing = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_NetworkManagement_WiFi", "Win32_NetworkManagement_Ndis"] }
-quick-xml = { version = "0.41", features = ["serialize"] }
+quick-xml = { version = "0.42", features = ["serialize"] }
 
 [dev-dependencies]
 # Pure-logic unit tests live inside each module; no extra dev-deps required.
 serde_json = { workspace = true }
-quick-xml = { version = "0.41", features = ["serialize"] }
+quick-xml = { version = "0.42", features = ["serialize"] }
