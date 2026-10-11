@@ -23,7 +23,7 @@ Each operating system has its own tools and APIs for managing Wi-Fi:
 |----|--------------|---------------|--------------|---------|
 | macOS | `networksetup`, `security` | `-listpreferredwirelessnetworks` | Keychain via `security` | `-setairportnetwork` |
 | Linux | `nmcli` (NetworkManager) | `device wifi list` | `connection show` | `device wifi connect` |
-| Windows | `netsh` | `wlan show networks` | `wlan show profiles ... key=clear` | `wlan connect` |
+| Windows | Native Wi-Fi API | `WlanGetAvailableNetworkList` | `WlanGetProfile` XML | `WlanSetProfile` / `WlanConnect` |
 
 QR Wi-Fi RS abstracts these differences behind the **`WifiAdapter` trait**, so the core logic doesn't need to know which OS it's running on.
 
@@ -73,10 +73,10 @@ pub fn default_adapter() -> Box<dyn WifiAdapter> {
     return Box::new(macos::MacosAdapter::new());
 
     #[cfg(target_os = "linux")]
-    return Box::new(linux::LinuxAdapter::new());
+    return Box::new(linux::LinuxAdapter);
 
     #[cfg(target_os = "windows")]
-    return Box::new(windows::WindowsAdapter::new());
+    return Box::new(windows::WindowsAdapter);
 
     #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     compile_error!("QR Wi-Fi RS supports macOS, Linux, and Windows only");
@@ -87,7 +87,7 @@ This is evaluated at **compile time** — only the current OS's code is linked i
 
 ### Platform Module Structure
 
-Each platform lives in `crates/core/src/platform/{os}.mod`:
+Each platform lives in `crates/core/src/platform/{os}.rs`:
 
 ```
 platform/
@@ -95,7 +95,9 @@ platform/
 ├── command.rs      # Shell execution helpers (shared)
 ├── macos.rs        # macOS implementation
 ├── linux.rs        # Linux implementation
-└── windows.rs      # Windows implementation
+├── windows.rs      # Windows profile XML and adapter
+└── windows/
+    └── native.rs   # Windows-only owned FFI wrappers
 ```
 
 ---
@@ -105,13 +107,13 @@ platform/
 Rust provides `#[cfg(...)]` attributes to include code only on specific platforms:
 
 ```rust
-#[cfg(target_os = "macos")]
+#[cfg(any(test, target_os = "macos"))]
 mod macos;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(test, target_os = "linux"))]
 mod linux;
 
-#[cfg(target_os = "windows")]
+#[cfg(any(test, target_os = "windows"))]
 mod windows;
 ```
 
@@ -200,28 +202,37 @@ QR Wi-Fi RS uses `nmcli`, which is the standard CLI for NetworkManager on most L
 ### List Networks
 
 ```bash
-nmcli -t -f SSID,SECURITY,SIGNAL device wifi list --rescan yes
+LC_ALL=C.UTF-8 nmcli --colors no -t -f ACTIVE,SSID,SIGNAL,SECURITY device wifi --rescan no
 ```
 
-Output format (tab-separated):
+The adapter actually requests `ACTIVE,SSID,SIGNAL,SECURITY` with `--rescan no`
+and `--colors no`, running the process with `LC_ALL=C.UTF-8`. Plain `C` would
+replace Unicode SSIDs with question marks. Terse fields are colon
+separated, with literal colons and backslashes escaped:
 ```
-MyNetwork:WPA2:65
-Guest:WPA:40
+yes:MyNetwork:65:WPA2
+no:Cafe\:Guest:40:
 ```
 
 ### Get Current SSID
 
 ```bash
-nmcli -t -f active,ssid dev wifi | grep '^yes' | cut -d: -f2
+LC_ALL=C.UTF-8 nmcli --colors no -t -f ACTIVE,SSID device wifi --rescan no
 ```
 
 ### Get Credentials
 
 ```bash
-nmcli -s connection show "$SSID"
+nmcli -t -f UUID,TYPE connection show
+nmcli --escape no -g 802-11-wireless.ssid connection show uuid "$UUID"
+nmcli --show-secrets --escape no -t -m multiline \
+  -f 802-11-wireless,802-11-wireless-security connection show uuid "$UUID"
 ```
 
-The `-s` flag shows secrets (passwords). Output format:
+Saved profile names can differ from SSIDs, so the adapter first resolves a Wi-Fi
+profile by its actual SSID, then queries it by UUID. Multiline property names
+are stable and values retain literal punctuation and spaces. The result keeps
+key management, the selected WEP key or WPA key, and the hidden setting:
 ```
 802-11-wireless-security.psk:mysecretpassword
 ...
@@ -235,62 +246,49 @@ nmcli device wifi connect "$SSID" password "$PASSWORD"
 
 For hidden networks:
 ```bash
-nmcli connection add con-name "$SSID" type wifi ssid "$SSID"
-nmcli connection modify "$SSID" 802-11-wireless.hidden yes
-nmcli connection up "$SSID"
+nmcli device wifi connect "$SSID" password "$PASSWORD" hidden yes
 ```
 
 ---
 
 ## Windows Details
 
-### netsh Commands
+### Native Wi-Fi API
 
-Windows uses `netsh wlan` for all Wi-Fi operations.
+`windows/native.rs` owns a `WlanOpenHandle` session and every buffer returned by
+`wlanapi.dll`. `Drop` calls `WlanCloseHandle` and `WlanFreeMemory` on error paths
+as well as successful paths. Only this module compiles for Windows; profile
+encoding and decoding remain testable on every host.
 
-### List Networks
+`WlanEnumInterfaces` finds wireless adapters. `WlanQueryInterface` reads the
+connected SSID, while `WlanGetAvailableNetworkList` supplies SSID bytes,
+authentication, signal quality, and active flags. Network names use UTF-8 bytes
+directly, avoiding console encoding and translated `netsh` labels.
 
-```cmd
-netsh wlan show networks mode=bssid
-```
+### Saved Credentials
 
-Parsing is complex due to Windows localization. We match on patterns like:
-```
-SSID 1 : MyNetwork
-    Network type             : Infrastructure
-    Authentication          : WPA2-Personal
-    Encryption              : CCMP
-```
-
-### Get Current SSID
-
-```cmd
-netsh wlan show interfaces
-```
-
-Parse the `SSID` line:
-```
-SSID                   : MyNetwork
-```
-
-### Get Credentials
-
-```cmd
-netsh wlan show profiles name="MyNetwork" key=clear
-```
-
-Parse the `Key Content` line:
-```
-Key Content            : mysecretpassword
-```
+`WlanGetProfileList` and `WlanGetProfile` resolve a profile by its SSID even if
+the profile was renamed. Profile XML supplies security, the hidden flag, and
+the key. Plaintext access is requested only for the selected profile. If
+Windows returns an encrypted key (`protected=true`), the password stays absent.
+Enterprise profiles are rejected because the personal Wi-Fi QR model cannot
+represent 802.1X credentials.
 
 ### Connect
 
-```cmd
-netsh wlan connect name="MyNetwork"
-```
+`WlanSetProfile` receives XML directly in memory, with hexadecimal SSID bytes
+and escaped names/passwords. A 64-digit hexadecimal WPA key uses `networkKey`;
+ordinary passwords use `passPhrase`. Existing profiles retain their name and
+per-user/all-user scope, while new profiles are per-user. No temporary file
+contains the password.
 
-For networks with passwords, the profile must already exist (it's created when you first connect).
+`WlanConnect` requests a connection using the saved profile. Windows completes
+association asynchronously; a successful return means the request was accepted.
+
+Recent Windows versions can require Location services and desktop-app location
+permission to read Wi-Fi networks. The adapter explains this setting when
+Windows denies access. WLAN AutoConfig, a usable Wi-Fi adapter, and permission
+to read or update profiles are also required.
 
 ---
 
@@ -302,7 +300,17 @@ You can't run `networksetup` on Linux or `nmcli` on macOS. How do we test platfo
 
 ### Strategy 1: Parse-Only Tests
 
-Test the **output parsing logic** with mock command output:
+Test the **output parsing logic** with mock command output. The platform modules
+use `cfg(any(test, target_os = "..."))`, so `cargo test` runs all parser and
+profile regressions on any supported host. Windows native SSID/security tests
+additionally run on Windows. No unit test reads or changes real Wi-Fi settings.
+
+`scripts/test-linux-nmcli.sh` also exercises the real adapter against inactive
+renamed WPA2/WPA3/WEP/open profiles, including a Unicode SSID and spaces in a
+password. It requires a disposable Linux container running as root, and marks
+every interface unmanaged before starting NetworkManager. CI runs this check
+with Rust 1.88. The Rust integration test is ignored during ordinary tests
+because it requires these explicit fixtures.
 
 ```rust
 #[cfg(test)]

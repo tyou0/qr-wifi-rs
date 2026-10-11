@@ -1,13 +1,18 @@
-//! Windows Wi-Fi adapter backed by `netsh wlan`.
+//! Windows Wi-Fi adapter backed by the Native Wi-Fi API.
+//!
+//! Structured SSIDs and profile XML avoid localized labels and console code pages.
 
-use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
+#[cfg(target_os = "windows")]
+mod native;
+
+use serde::Deserialize;
 
 use crate::error::{CoreError, Result};
-use crate::platform::{run, WifiAdapter};
-use crate::types::{WifiCredentials, WifiNetwork, WifiSecurity};
-
-const NETSH: &str = "netsh";
+#[cfg(target_os = "windows")]
+use crate::platform::WifiAdapter;
+#[cfg(target_os = "windows")]
+use crate::types::WifiNetwork;
+use crate::types::{WifiCredentials, WifiSecurity};
 
 fn xml_escape(value: &str) -> String {
     value
@@ -18,9 +23,21 @@ fn xml_escape(value: &str) -> String {
         .replace('\'', "&apos;")
 }
 
-/// Build the WLAN profile consumed by `netsh wlan add profile`.
-fn profile_xml(credentials: &WifiCredentials) -> Result<String> {
+/// Build the WLAN profile consumed by WlanSetProfile.
+fn profile_xml(credentials: &WifiCredentials, profile_name: &str) -> Result<String> {
+    if credentials.ssid.is_empty() || credentials.ssid.len() > 32 {
+        return Err(CoreError::Platform(
+            "Wi-Fi SSID must contain 1 to 32 bytes".into(),
+        ));
+    }
+    let profile_name = xml_escape(profile_name);
     let ssid = xml_escape(&credentials.ssid);
+    let hex: String = credentials
+        .ssid
+        .as_bytes()
+        .iter()
+        .map(|byte| format!("{byte:02X}"))
+        .collect();
     let hidden = if credentials.hidden { "true" } else { "false" };
 
     let (authentication, encryption, shared_key) = match credentials.security {
@@ -51,11 +68,19 @@ fn profile_xml(credentials: &WifiCredentials) -> Result<String> {
             } else {
                 "WPA2PSK"
             };
+            let key_type = if credentials.security != WifiSecurity::Wpa3
+                && password.len() == 64
+                && password.bytes().all(|byte| byte.is_ascii_hexdigit())
+            {
+                "networkKey"
+            } else {
+                "passPhrase"
+            };
             (
                 authentication,
                 "AES",
                 format!(
-                    "<sharedKey><keyType>passPhrase</keyType><protected>false</protected><keyMaterial>{}</keyMaterial></sharedKey>",
+                    "<sharedKey><keyType>{key_type}</keyType><protected>false</protected><keyMaterial>{}</keyMaterial></sharedKey>",
                     xml_escape(password)
                 ),
             )
@@ -65,9 +90,9 @@ fn profile_xml(credentials: &WifiCredentials) -> Result<String> {
     Ok(format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
-  <name>{ssid}</name>
+  <name>{profile_name}</name>
   <SSIDConfig>
-    <SSID><name>{ssid}</name></SSID>
+    <SSID><hex>{hex}</hex><name>{ssid}</name></SSID>
     <nonBroadcast>{hidden}</nonBroadcast>
   </SSIDConfig>
   <connectionType>ESS</connectionType>
@@ -87,145 +112,138 @@ fn profile_xml(credentials: &WifiCredentials) -> Result<String> {
     ))
 }
 
-fn temporary_profile_path() -> PathBuf {
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    std::env::temp_dir().join(format!("qr-wifi-rs-{}-{nonce}.xml", std::process::id()))
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WindowsProfile {
+    name: String,
+    #[serde(rename = "SSIDConfig")]
+    ssid_config: SsidConfig,
+    #[serde(rename = "MSM")]
+    msm: Msm,
 }
 
-fn install_profile(credentials: &WifiCredentials) -> Result<()> {
-    let path = temporary_profile_path();
-    std::fs::write(&path, profile_xml(credentials)?)?;
-
-    let filename = format!("filename={}", path.display());
-    let add_result = run(
-        NETSH,
-        &["wlan", "add", "profile", &filename, "user=current"],
-    );
-    let remove_result = std::fs::remove_file(&path);
-
-    if let Err(error) = remove_result {
-        return Err(CoreError::Platform(format!(
-            "could not remove temporary Windows Wi-Fi profile: {error}"
-        )));
-    }
-    add_result.map(|_| ())
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SsidConfig {
+    #[serde(rename = "SSID")]
+    ssid: Ssid,
+    #[serde(default)]
+    non_broadcast: bool,
 }
 
-/// Find the current SSID in `netsh wlan show interfaces` output.
-///
-/// netsh pads the label with many spaces (`SSID            : Name`), so we
-/// match the `SSID` token directly and split on the first `:`. Left-trimming
-/// first means a `BSSID` line can never match (it starts with `B`).
-pub fn parse_netsh_current_ssid(output: &str) -> Option<String> {
-    for line in output.lines() {
-        let trimmed = line.trim_start();
-        let Some(rest) = trimmed.strip_prefix("SSID") else {
-            continue;
-        };
-        let Some(value) = rest.trim_start().strip_prefix(':') else {
-            continue;
-        };
-        let ssid = value.trim();
-        if !ssid.is_empty() {
-            return Some(ssid.to_string());
-        }
-    }
-    None
+#[derive(Deserialize)]
+struct Ssid {
+    name: Option<String>,
+    hex: Option<String>,
 }
 
-/// Parse `netsh wlan show networks mode=Bssid` into visible networks.
-pub fn parse_netsh_networks(output: &str, active: Option<&str>) -> Vec<WifiNetwork> {
-    let mut networks = Vec::new();
-    for line in output.lines() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("SSID ") {
-            // Lines look like "SSID 1 : MyNetwork" or "SSID 2 : Other".
-            if let Some(colon) = rest.find(" : ") {
-                let ssid = rest[colon + 3..].trim();
-                if !ssid.is_empty() {
-                    let is_active = active.is_some_and(|a| a == ssid);
-                    networks.push(WifiNetwork {
-                        ssid: ssid.to_string(),
-                        security: WifiSecurity::Wpa,
-                        signal: None,
-                        active: is_active,
-                    });
-                }
+#[derive(Deserialize)]
+struct Msm {
+    security: ProfileSecurity,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProfileSecurity {
+    auth_encryption: AuthEncryption,
+    shared_key: Option<SharedKey>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AuthEncryption {
+    authentication: String,
+    encryption: String,
+    #[serde(default)]
+    use_one_x: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SharedKey {
+    protected: bool,
+    key_material: Option<String>,
+}
+
+fn parse_profile(xml: &str) -> Result<WindowsProfile> {
+    // Do not include raw XML or a deserialization error that could quote a key.
+    quick_xml::de::from_str(xml)
+        .map_err(|_| CoreError::Platform("Invalid Windows Wi-Fi profile XML".into()))
+}
+
+impl WindowsProfile {
+    fn ssid(&self) -> Result<String> {
+        if let Some(hex) = &self.ssid_config.ssid.hex {
+            if !hex.len().is_multiple_of(2) || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                return Err(CoreError::Platform("Invalid Windows Wi-Fi SSID hex".into()));
             }
+            let bytes: Vec<u8> = (0..hex.len())
+                .step_by(2)
+                .map(|index| u8::from_str_radix(&hex[index..index + 2], 16).unwrap())
+                .collect();
+            return String::from_utf8(bytes)
+                .map_err(|_| CoreError::Platform("Wi-Fi SSID is not valid UTF-8".into()));
         }
+        self.ssid_config
+            .ssid
+            .name
+            .clone()
+            .ok_or_else(|| CoreError::Platform("Windows Wi-Fi profile has no SSID".into()))
     }
-    networks
+
+    fn credentials(&self) -> Result<WifiCredentials> {
+        let auth = &self.msm.security.auth_encryption;
+        let security = match (
+            auth.authentication.as_str(),
+            auth.encryption.as_str(),
+            auth.use_one_x,
+        ) {
+            ("open" | "shared", "WEP", false) => WifiSecurity::Wep,
+            ("open", "none", false) => WifiSecurity::Nopass,
+            ("WPAPSK", _, false) => WifiSecurity::Wpa,
+            ("WPA2PSK", _, false) => WifiSecurity::Wpa2,
+            ("WPA3SAE" | "WPA3SAEEXT", _, false) => WifiSecurity::Wpa3,
+            _ => return Err(CoreError::Platform(
+                "This Windows Wi-Fi authentication cannot be shared as a personal Wi-Fi QR code"
+                    .into(),
+            )),
+        };
+        let password = self
+            .msm
+            .security
+            .shared_key
+            .as_ref()
+            .filter(|key| !key.protected && security.requires_password())
+            .and_then(|key| key.key_material.clone())
+            .filter(|password| !password.is_empty());
+        Ok(WifiCredentials {
+            ssid: self.ssid()?,
+            security,
+            password,
+            hidden: self.ssid_config.non_broadcast,
+        })
+    }
 }
 
+#[cfg(target_os = "windows")]
 pub struct WindowsAdapter;
 
+#[cfg(target_os = "windows")]
 impl WifiAdapter for WindowsAdapter {
     fn current_ssid(&self) -> Result<String> {
-        let output = run(NETSH, &["wlan", "show", "interfaces"])?;
-        parse_netsh_current_ssid(&output).ok_or(crate::error::CoreError::NoActiveNetwork)
+        native::Session::open()?.current_ssid()
     }
 
     fn list_networks(&self) -> Result<Vec<WifiNetwork>> {
-        let active = self.current_ssid().ok();
-        let output = run(NETSH, &["wlan", "show", "networks", "mode=Bssid"])?;
-        let mut networks = parse_netsh_networks(&output, active.as_deref());
-
-        if let Some(current) = active {
-            if !networks.iter().any(|n| n.ssid == current) {
-                networks.insert(
-                    0,
-                    WifiNetwork {
-                        ssid: current,
-                        security: WifiSecurity::Wpa,
-                        signal: None,
-                        active: true,
-                    },
-                );
-            }
-        }
-        crate::types::sort_networks(&mut networks);
-        Ok(networks)
+        native::Session::open()?.networks()
     }
 
     fn credentials(&self, ssid: &str) -> Result<WifiCredentials> {
-        // `name=<ssid>` and `key=clear` are passed as separate argv elements so
-        // the SSID cannot alter netsh's tokenization (no shell, no injection).
-        let name_arg = format!("name={ssid}");
-        let output = run(NETSH, &["wlan", "show", "profile", &name_arg, "key=clear"])?;
-        let password = output
-            .lines()
-            .find_map(|line| {
-                let trimmed = line.trim();
-                trimmed
-                    .strip_prefix("Key Content")
-                    .and_then(|rest| rest.trim_start_matches(':').trim().parse().ok())
-            })
-            .filter(|p: &String| !p.is_empty());
-
-        Ok(WifiCredentials {
-            ssid: ssid.to_string(),
-            security: WifiSecurity::Wpa,
-            password,
-            hidden: false,
-        })
+        native::Session::open()?.credentials(ssid)
     }
 
     fn connect(&self, credentials: &WifiCredentials) -> Result<()> {
-        let has_password = credentials
-            .password
-            .as_deref()
-            .is_some_and(|password| !password.is_empty());
-        if credentials.security == WifiSecurity::Nopass || has_password {
-            install_profile(credentials)?;
-        }
-
-        let name_arg = format!("name={}", credentials.ssid);
-        let ssid_arg = format!("ssid={}", credentials.ssid);
-        run(NETSH, &["wlan", "connect", &name_arg, &ssid_arg])?;
-        Ok(())
+        native::Session::open()?.connect(credentials)
     }
 }
 
@@ -234,35 +252,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_current_ssid() {
-        let out = "\
-There is 1 interface on the system:
-
-    Name                   : Wi-Fi
-    SSID                   : Upstairs
-    BSSID                  : aa:bb:cc:dd:ee:ff
-";
-        assert_eq!(parse_netsh_current_ssid(out), Some("Upstairs".into()));
-    }
-
-    #[test]
-    fn ignores_bssid_line() {
-        let out = "    BSSID                  : aa:bb:cc:dd:ee:ff\n";
-        assert_eq!(parse_netsh_current_ssid(out), None);
-    }
-
-    #[test]
-    fn parses_network_rows_and_marks_active() {
-        let out = "\
-SSID 1 : Home
-    BSSID 1             : aa:bb:cc:dd:ee:ff
-SSID 2 : Guest
-";
-        let nets = parse_netsh_networks(out, Some("Home"));
-        assert_eq!(nets.len(), 2);
-        assert_eq!(nets[0].ssid, "Home");
-        assert!(nets[0].active);
-        assert!(!nets[1].active);
+    fn profiles_round_trip_all_security_types_and_exact_credentials() {
+        for security in [
+            WifiSecurity::Nopass,
+            WifiSecurity::Wep,
+            WifiSecurity::Wpa2,
+            WifiSecurity::Wpa3,
+        ] {
+            let mut credentials = WifiCredentials::new("  카페:&WiFi  ", security).hidden(true);
+            if security.requires_password() {
+                credentials.password = Some("  p:<&\\\"'>  ".into());
+            }
+            let xml = profile_xml(&credentials, "Renamed saved profile").unwrap();
+            let profile = parse_profile(&xml).unwrap();
+            assert_eq!(profile.name, "Renamed saved profile");
+            assert_eq!(profile.credentials().unwrap(), credentials);
+        }
     }
 
     #[test]
@@ -270,7 +275,7 @@ SSID 2 : Guest
         let credentials = WifiCredentials::new("Cafe & <Lab>", WifiSecurity::Wpa2)
             .with_password("p<&\"'>")
             .hidden(true);
-        let xml = profile_xml(&credentials).unwrap();
+        let xml = profile_xml(&credentials, &credentials.ssid).unwrap();
         assert!(xml.contains("Cafe &amp; &lt;Lab&gt;"));
         assert!(xml.contains("p&lt;&amp;&quot;&apos;&gt;"));
         assert!(xml.contains("<nonBroadcast>true</nonBroadcast>"));
@@ -280,7 +285,7 @@ SSID 2 : Guest
     #[test]
     fn open_profile_has_no_shared_key() {
         let credentials = WifiCredentials::new("Guest", WifiSecurity::Nopass);
-        let xml = profile_xml(&credentials).unwrap();
+        let xml = profile_xml(&credentials, &credentials.ssid).unwrap();
         assert!(xml.contains("<authentication>open</authentication>"));
         assert!(xml.contains("<encryption>none</encryption>"));
         assert!(!xml.contains("sharedKey"));
@@ -289,6 +294,52 @@ SSID 2 : Guest
     #[test]
     fn secured_profile_requires_password() {
         let credentials = WifiCredentials::new("Home", WifiSecurity::Wpa3);
-        assert!(profile_xml(&credentials).is_err());
+        assert!(profile_xml(&credentials, &credentials.ssid).is_err());
+    }
+
+    #[test]
+    fn encrypted_keys_are_never_returned_as_passwords() {
+        let credentials =
+            WifiCredentials::new("Home", WifiSecurity::Wpa2).with_password("test-password");
+        let xml = profile_xml(&credentials, "Home")
+            .unwrap()
+            .replace("<protected>false", "<protected>true");
+        assert!(parse_profile(&xml)
+            .unwrap()
+            .credentials()
+            .unwrap()
+            .password
+            .is_none());
+    }
+
+    #[test]
+    fn raw_psk_uses_network_key_and_utf8_ssids_use_hex() {
+        let credentials =
+            WifiCredentials::new("카페", WifiSecurity::Wpa2).with_password("a".repeat(64));
+        let xml = profile_xml(&credentials, "Home").unwrap();
+        assert!(xml.contains("<keyType>networkKey</keyType>"));
+        assert!(xml.contains("<hex>ECB9B4ED8E98</hex>"));
+        assert_eq!(
+            parse_profile(&xml).unwrap().ssid().unwrap(),
+            credentials.ssid
+        );
+        assert!(profile_xml(
+            &WifiCredentials::new("가".repeat(11), WifiSecurity::Nopass),
+            "Too long"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn enterprise_profiles_and_invalid_xml_report_errors_without_keys() {
+        let credentials =
+            WifiCredentials::new("Office", WifiSecurity::Wpa2).with_password("secret-fixture");
+        let xml = profile_xml(&credentials, "Office")
+            .unwrap()
+            .replace("WPA2PSK", "WPA2")
+            .replace("<useOneX>false", "<useOneX>true");
+        assert!(parse_profile(&xml).unwrap().credentials().is_err());
+        let error = parse_profile("<keyMaterial>secret-fixture").err().unwrap();
+        assert!(!error.to_string().contains("secret-fixture"));
     }
 }

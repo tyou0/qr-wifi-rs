@@ -10,7 +10,7 @@ projects are fully separated:
 - `qr_wifi_rs` — Rust workspace (this project): CLI, TUI, Tauri desktop GUI,
   and a browser-extension Native Messaging host.
 
-Everything that touches the OS (`networksetup`, `nmcli`, `netsh`) is written in
+Everything that touches the OS (`networksetup`, `nmcli`, Windows Native Wi-Fi) is written in
 Rust. The only non-Rust pieces are the Tauri webview frontend (vanilla
 HTML/CSS/JS, no TypeScript, no bundler) and the browser extension.
 
@@ -60,7 +60,7 @@ frontends.
 - **Tauri CLI** (only for the desktop GUI): `cargo install tauri-cli --version "^2"`.
 - OS Wi-Fi tooling:
   `networksetup`/`ipconfig`/`security` (macOS), `nmcli` (Linux, NetworkManager),
-  `netsh` (Windows).
+  Windows WLAN AutoConfig / Native Wi-Fi (built into Windows).
 
 ## Install
 
@@ -160,6 +160,9 @@ your existing network configuration automatically.
 [Microsoft Edge WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/).
 Source builds additionally need Rust's **MSVC** toolchain and Visual Studio
 Build Tools with **Desktop development with C++** (including the Windows SDK).
+Wi-Fi detection/listing on recent Windows versions may require **Location
+services** and **desktop-app location access** in Settings > Privacy & security
+> Location. Saved passwords remain subject to Windows policy and user permissions.
 
 Browser extension registration remains an optional separate step. For the
 combined macOS/Linux installation:
@@ -526,7 +529,21 @@ defaulting to `en0`.
 | ------- | ------------------------ | ------------------------------------ | -------------------------------- | -------------------------------- |
 | macOS   | networksetup/ipconfig/…  | `networksetup -listpreferred…`       | Keychain `security`              | `networksetup -setairportnetwork`|
 | Linux   | `nmcli`                  | `nmcli device wifi`                  | `nmcli -s connection show`       | `nmcli device wifi connect`      |
-| Windows | `netsh wlan show interf.`| `netsh wlan show networks`           | `netsh … key=clear`              | `netsh wlan connect`             |
+| Windows | Native Wi-Fi query       | Native Wi-Fi available-network list | Native Wi-Fi profile XML        | Native Wi-Fi profile + connect   |
+
+Linux requires NetworkManager managing the wireless interface. Saved profiles
+are resolved by SSID and UUID, including renamed profiles; escaped colons,
+backslashes, Unicode names, and hidden networks are supported. Windows uses
+structured Native Wi-Fi data instead of localized `netsh` output. Personal
+WPA/WPA2/WPA3, WEP, and open profiles retain their security and hidden settings;
+enterprise authentication cannot be represented by this toolkit's personal Wi-Fi QR model.
+
+`cargo test` runs all platforms' parser/profile regressions on every host, without
+changing Wi-Fi settings. CI builds, tests, and lints the complete workspace on
+Linux, Windows, and both Mac architectures, and tests the declared Rust 1.88
+minimum separately. Real Wi-Fi association and camera capture still require
+hardware checks on each OS. Windows connection success means the OS accepted
+the connection request; association completes asynchronously.
 
 ## License
 

@@ -47,8 +47,8 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
 
-      - name: Clippy default workspace crates
-        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Clippy all workspace crates, including the desktop GUI
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
 
       - name: Test default workspace crates
         run: cargo test --locked
@@ -61,6 +61,25 @@ jobs:
 
       - name: Test Tauri command contracts
         run: cargo test --locked -p qr-wifi-gui
+
+  msrv:
+    name: Minimum Rust version (1.88)
+    runs-on: ubuntu-latest
+    container: rust:1.88-bookworm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Test default workspace crates on the minimum Rust version
+        run: cargo test --locked
+
+      - name: Install NetworkManager fixture dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends network-manager dbus
+
+      - name: Test real NetworkManager credential retrieval without Wi-Fi hardware
+        run: bash scripts/test-linux-nmcli.sh
 
   packaging:
     name: Packaging and extension checks

@@ -27,7 +27,8 @@ Anyone who can see or copy either value can join that network.
 - Chrome and Firefox receive separate host manifests with explicit extension
   allowlists.
 - Tauri loads local assets under a restrictive Content Security Policy.
-- Temporary Windows Wi-Fi profile files are removed before connecting.
+- Windows Wi-Fi profiles are passed directly to the Native Wi-Fi API; plaintext
+  passwords are not written to temporary profile files.
 - The extension requests only the `nativeMessaging` permission.
 
 ## Residual risks

@@ -1,6 +1,7 @@
 import {
   cameraCaptureDimensions,
   cameraVideoConstraints,
+  hasCameraFrame,
 } from "./scanner.mjs";
 import { appendConsoleText, formatScannedQr } from "./console.mjs";
 import { ScanSession } from "./scanner-state.mjs";
@@ -318,7 +319,7 @@ async function captureAndDecode() {
     if (scanStream && scanSession.isScanning(token)) scheduleNextScan();
     return;
   }
-  if (isDecoding || video.readyState < video.HAVE_ENOUGH_DATA) {
+  if (isDecoding || !hasCameraFrame(video)) {
     scheduleNextScan();
     return;
   }

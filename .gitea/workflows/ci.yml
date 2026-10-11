@@ -34,8 +34,8 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
 
-      - name: Clippy default workspace crates
-        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Clippy all workspace crates, including the desktop GUI
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
 
       - name: Test default workspace crates
         run: cargo test --locked

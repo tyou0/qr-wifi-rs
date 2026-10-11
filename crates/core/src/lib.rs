@@ -7,7 +7,7 @@
 //! - [`types`] — domain models (`WifiSecurity`, `WifiNetwork`, `WifiCredentials`).
 //! - [`payload`] — build/parse `WIFI:` QR payloads.
 //! - [`qr`] — QR matrix → PNG / terminal art, plus image decoding.
-//! - [`platform`] — OS Wi-Fi adapters (`networksetup`, `nmcli`, `netsh`).
+//! - [`platform`] — OS Wi-Fi adapters (`networksetup`, `nmcli`, Native Wi-Fi).
 //! - [`service`] — high-level feature functions shared by every frontend.
 //! - [`ipc`] — shared request/response protocol and Native Messaging framing.
 
