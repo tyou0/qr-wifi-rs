@@ -99,9 +99,15 @@ pub fn build_payload(credentials: &WifiCredentials) -> String {
 
 /// Parse a `WIFI:` QR payload into credentials.
 pub fn parse_payload(payload: &str) -> Result<WifiCredentials> {
-    let body = payload
-        .strip_prefix(PREFIX)
-        .ok_or_else(|| CoreError::Payload("not a WIFI: payload".into()))?;
+    let trimmed = payload.trim();
+    let body = if let Some(body) = trimmed.strip_prefix(PREFIX) {
+        body
+    } else if trimmed.len() >= PREFIX.len() && trimmed[..PREFIX.len()].eq_ignore_ascii_case(PREFIX)
+    {
+        &trimmed[PREFIX.len()..]
+    } else {
+        return Err(CoreError::Payload("not a WIFI: payload".into()));
+    };
 
     let mut ssid: Option<String> = None;
     let mut security = WifiSecurity::Wpa;
@@ -112,7 +118,7 @@ pub fn parse_payload(payload: &str) -> Result<WifiCredentials> {
         if field.len() < 2 || field.as_bytes()[1] != b':' {
             continue;
         }
-        let key = field.as_bytes()[0];
+        let key = field.as_bytes()[0].to_ascii_uppercase();
         // Safe to slice from byte 2 because the value starts after an ASCII ':'.
         let raw = unescape_field(&field[2..]);
         match key {
@@ -260,5 +266,21 @@ mod tests {
     fn parse_drops_password_for_open_network() {
         let parsed = parse_payload("WIFI:T:nopass;S:Open;P:ignored;;").unwrap();
         assert!(parsed.password.is_none());
+    }
+
+    #[test]
+    fn parses_case_insensitive_prefix_and_keys() {
+        let parsed = parse_payload("wifi:t:wpa;s:MyNet;p:secret;h:false;;").unwrap();
+        assert_eq!(parsed.ssid, "MyNet");
+        assert_eq!(parsed.security, WifiSecurity::Wpa);
+        assert_eq!(parsed.password.as_deref(), Some("secret"));
+        assert!(!parsed.hidden);
+    }
+
+    #[test]
+    fn parses_payload_with_surrounding_whitespace() {
+        let parsed = parse_payload("  \r\nWIFI:T:WPA;S:SpacedNet;P:pass;;\n\t").unwrap();
+        assert_eq!(parsed.ssid, "SpacedNet");
+        assert_eq!(parsed.password.as_deref(), Some("pass"));
     }
 }

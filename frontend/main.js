@@ -255,6 +255,7 @@ async function startScanning() {
 
     scanStream = requestedStream;
     const video = $("#scan-video");
+    video.muted = true;
     video.srcObject = scanStream;
     await video.play();
     if (!scanSession.isScanning(token)) return;
@@ -324,51 +325,73 @@ async function captureAndDecode() {
     return;
   }
   isDecoding = true;
-  // Preserve native detail for QR detection. The old unconditional 360px
-  // downscale discarded enough modules that ordinary camera-distance codes
-  // became undecodable. Cap only large sources to bound IPC/decoder work.
-  const { width: w, height: h } = cameraCaptureDimensions(
-    video.videoWidth,
-    video.videoHeight,
-  );
-  scanCanvas.width = w;
-  scanCanvas.height = h;
-  scanCtx.drawImage(video, 0, 0, w, h);
-  const dataUrl = scanCanvas.toDataURL("image/jpeg", 0.92);
-  const base64 = dataUrl.slice("data:image/jpeg;base64,".length);
-  let decoded;
+
   try {
-    decoded = await invoke("decode_qr", { imageBase64: base64 });
+    // Preserve native detail for QR detection. The old unconditional 360px
+    // downscale discarded enough modules that ordinary camera-distance codes
+    // became undecodable. Cap only large sources to bound IPC/decoder work.
+    const { width: w, height: h } = cameraCaptureDimensions(
+      video.videoWidth,
+      video.videoHeight,
+    );
+    if (scanCanvas.width !== w || scanCanvas.height !== h) {
+      scanCanvas.width = w;
+      scanCanvas.height = h;
+    }
+    scanCtx.drawImage(video, 0, 0, w, h);
+    const dataUrl = scanCanvas.toDataURL("image/jpeg", 0.92);
+    const commaIdx = dataUrl.indexOf(",");
+    if (commaIdx === -1) {
+      if (scanSession.isScanning(token)) scheduleNextScan();
+      return;
+    }
+    const base64 = dataUrl.slice(commaIdx + 1);
+    if (!base64) {
+      if (scanSession.isScanning(token)) scheduleNextScan();
+      return;
+    }
+
+    let decoded;
+    try {
+      decoded = await invoke("decode_qr", { imageBase64: base64 });
+    } catch (error) {
+      const message = typeof error === "string" ? error : error?.message ?? String(error);
+      if (message.includes("not a WIFI: payload")) {
+        print("QR code scanned, but it is not a Wi-Fi network payload.");
+        setStatus("Not a Wi-Fi QR code", "error");
+      }
+      if (scanSession.isScanning(token)) scheduleNextScan();
+      return;
+    }
+
+    if (!scanSession.beginConnecting(token)) return;
+    releaseScanner(false);
+    print(formatScannedQr(decoded));
+    setStatus(`Connecting to ${decoded.credentials.ssid}...`, "loading");
+    const startButton = $("#scan-camera");
+    let connectionError = null;
+    try {
+      await invoke("connect_network", { credentials: decoded.credentials });
+    } catch (error) {
+      connectionError = error;
+    }
+
+    const shouldReport = scanSession.settleConnection(token);
+    startButton.disabled = false;
+    if (!shouldReport) {
+      setStatus("Ready", "idle");
+      return;
+    }
+    if (connectionError === null) {
+      print(`Connected to ${decoded.credentials.ssid}.`);
+      setStatus("Connected", "success");
+    } else {
+      handleError(connectionError);
+    }
   } catch {
-    isDecoding = false;
     if (scanSession.isScanning(token)) scheduleNextScan();
-    return;
-  }
-
-  isDecoding = false;
-  if (!scanSession.beginConnecting(token)) return;
-  releaseScanner(false);
-  print(formatScannedQr(decoded));
-  setStatus(`Connecting to ${decoded.credentials.ssid}...`, "loading");
-  const startButton = $("#scan-camera");
-  let connectionError = null;
-  try {
-    await invoke("connect_network", { credentials: decoded.credentials });
-  } catch (error) {
-    connectionError = error;
-  }
-
-  const shouldReport = scanSession.settleConnection(token);
-  startButton.disabled = false;
-  if (!shouldReport) {
-    setStatus("Ready", "idle");
-    return;
-  }
-  if (connectionError === null) {
-    print(`Connected to ${decoded.credentials.ssid}.`);
-    setStatus("Connected", "success");
-  } else {
-    handleError(connectionError);
+  } finally {
+    isDecoding = false;
   }
 }
 $("#scan-camera").addEventListener("click", startScanning);

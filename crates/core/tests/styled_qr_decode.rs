@@ -26,3 +26,26 @@ fn decodes_inverted_styled_phone_wifi_qr() {
         "WIFI:S:ScannerFixture;T:WPA;P:not-a-real-password;H:false;;"
     );
 }
+
+#[test]
+fn decodes_mirrored_styled_phone_wifi_qr() {
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/styled-wifi-qr.jpg");
+    let image = image::open(fixture).expect("styled fixture should open");
+    let mirrored = image.fliph();
+    let payload = qr_wifi_core::decode_image(mirrored).expect("mirrored styled QR should decode");
+    assert_eq!(
+        payload,
+        "WIFI:S:ScannerFixture;T:WPA;P:not-a-real-password;H:false;;"
+    );
+}
+
+#[test]
+fn decodes_test_example_qr() {
+    let fixture =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/styled-wifi-qr-android.jpg");
+    let decoded = decode_qr_path(&fixture).expect("test_example QR should decode");
+    assert_eq!(decoded.ssid, "RHB Y");
+    assert_eq!(decoded.password.as_deref(), Some("plus43210"));
+    assert_eq!(decoded.security, WifiSecurity::Wpa);
+    assert!(!decoded.hidden);
+}

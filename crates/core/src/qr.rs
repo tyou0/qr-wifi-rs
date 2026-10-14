@@ -83,17 +83,32 @@ pub fn to_unicode(payload: &str) -> Result<String> {
 pub fn decode_image(img: DynamicImage) -> Result<String> {
     ensure_image_dimensions(img.width(), img.height())?;
 
-    // rqrr is fast for conventional QR codes. Keep it as the primary decoder,
-    // then fall back to ZXing's more tolerant detector for customized phone QR
-    // styles (round modules/finder rings and center logos).
     let luma = img.to_luma8();
+    if let Some(content) = decode_luma(&luma) {
+        return Ok(content);
+    }
+
+    // Try flipped horizontally in case the webcam stream or preview is mirrored.
+    let flipped_luma = image::imageops::flip_horizontal(&luma);
+    if let Some(content) = decode_luma(&flipped_luma) {
+        return Ok(content);
+    }
+
+    Err(CoreError::QrDecode("no QR code found in image".into()))
+}
+
+fn decode_luma(luma: &image::GrayImage) -> Option<String> {
+    // rqrr is fast for conventional QR codes. Check all detected grids rather than
+    // discarding the rest after the first candidate.
     let mut prepared = rqrr::PreparedImage::prepare(luma.clone());
-    if let Some(grid) = prepared.detect_grids().into_iter().next() {
+    for grid in prepared.detect_grids() {
         if let Ok((_meta, content)) = grid.decode() {
-            return Ok(content);
+            return Some(content);
         }
     }
 
+    // Fall back to ZXing's more tolerant detector for customized phone QR styles
+    // (round modules/finder rings and center logos).
     let (width, height) = luma.dimensions();
     let mut hints = DecodeHints {
         TryHarder: Some(true),
@@ -101,14 +116,14 @@ pub fn decode_image(img: DynamicImage) -> Result<String> {
         ..DecodeHints::default()
     };
     rxing::helpers::detect_in_luma_with_hints(
-        luma.into_raw(),
+        luma.clone().into_raw(),
         width,
         height,
         Some(BarcodeFormat::QR_CODE),
         &mut hints,
     )
+    .ok()
     .map(|result| result.getText().to_owned())
-    .map_err(|error| CoreError::QrDecode(error.to_string()))
 }
 
 /// Decode a QR code from base64-encoded image bytes (e.g. a PNG captured by a
