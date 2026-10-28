@@ -22,7 +22,7 @@ This document explains the architectural decisions behind QR Wi-Fi RS and how th
 The core design principle is: **all Wi-Fi logic lives in one place, frontends are thin callers**.
 
 This avoids:
-- Feature drift between CLI, TUI, GUI, and extension
+- Feature drift between CLI, TUI, and GUI
 - Duplicated bug fixes across multiple codebases
 - Inconsistent behavior for the same operation
 
@@ -35,7 +35,7 @@ Every meaningful operation (share, connect, list networks) is implemented once i
 
 A **Cargo workspace** allows multiple crates to share dependencies and build artifacts while keeping code organization clean. We use it because:
 
-1. **Clear boundaries:** Each crate has a single responsibility (core logic, CLI UI, TUI UI, host bridge)
+1. **Clear boundaries:** Each crate has a single responsibility (core logic, CLI UI, TUI UI, desktop UI)
 2. **Shared development:** One `cargo build` compiles all crates; one `Cargo.lock` ensures consistency
 3. **Selective building:** `cargo build -p qr-wifi-cli` builds only what's needed
 4. **Shared dependencies:** All crates use the same versions of `serde`, `thiserror`, etc.
@@ -45,7 +45,7 @@ A **Cargo workspace** allows multiple crates to share dependencies and build art
 **Alternative considered:** Put Wi-Fi logic directly in each binary.
 
 **Problems with that approach:**
-- Adding a feature requires editing 4+ places
+- Adding a feature requires editing three places
 - Bug fixes need to be replicated
 - Testing OS code requires spinning up each frontend
 - No clear "API surface" for the project
@@ -66,11 +66,9 @@ qr_wifi_rs/
 ├── crates/
 │   ├── core/                # qr-wifi-core (shared library)
 │   ├── cli/                 # qr-wifi (CLI binary, uses TUI for menu)
-│   ├── tui/                 # qr-wifi-tui (TUI library + binary)
-│   └── host/                # qr-wifi-host (Native Messaging bridge)
+│   └── tui/                 # qr-wifi-tui (TUI library + binary)
 ├── src-tauri/               # qr-wifi-gui (Tauri desktop app)
 ├── frontend/               # Vanilla HTML/CSS/JS for Tauri webview
-├── extension/              # Chrome/Firefox browser extension
 └── docs/                   # Study materials
 ```
 
@@ -78,35 +76,19 @@ qr_wifi_rs/
 
 | Crate | Type | Responsibility |
 |-------|------|-----------------|
-| `qr-wifi-core` | Library (rlib) | All Wi-Fi, QR, payload, and IPC logic |
+| `qr-wifi-core` | Library (rlib) | All Wi-Fi, QR, and payload logic |
 | `qr-wifi-cli` | Binary | CLI argument parsing → core calls or TUI menu |
 | `qr-wifi-tui` | Library + Binary | Interactive menu; also used by CLI |
-| `qr-wifi-host` | Binary | Native Messaging stdio bridge |
 | `qr-wifi-gui` | Binary | Tauri desktop app (thin command layer) |
 
 ### Dependency Graph
 
-```
-┌───────────────────────────────────────────────────────────────┐
-│                    qr-wifi-core (library)                     │
-│  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐    │
-│  │ platform/  │  │  qr/, types/ │  │  payload, ipc/  │    │
-│  │  adapters   │→ │  QR codecs   │← │   protocol       │    │
-│  └─────────────┘  └──────────────┘  └──────────────────┘    │
-│                          ↓                                     │
-│                    service/ (high-level API)                  │
-└───────────────────────────┬───────────────────────────────────┘
-                            │
-        ┌───────────────────┼───────────────────┐
-        ↓                   ↓                   ↓
-   ┌─────────┐        ┌─────────┐        ┌─────────┐
-   │   CLI   │        │   TUI   │        │  Host   │
-   └─────────┘        └─────────┘        └─────────┘
-                            │
-                            ↓
-                       ┌─────────┐
-                       │   GUI   │
-                       └─────────┘
+```text
+qr-wifi-cli ──→ qr-wifi-tui
+     │               │
+     └───────┬───────┘
+             ↓
+        qr-wifi-core ←── qr-wifi-gui (Tauri commands)
 ```
 
 ---
@@ -125,12 +107,11 @@ crates/core/src/
 ├── platform/        # OS-specific adapters
 │   ├── mod.rs       # WifiAdapter trait, factory
 │   ├── command.rs   # Shell execution helpers
-│   ├── macos.rs     # macOS (networksetup, security, syslog)
-│   ├── linux.rs     # Linux (nmcli)
+│   ├── macos.rs     # macOS (native CoreWLAN)
+│   ├── linux.rs     # Linux (NetworkManager D-Bus)
 │   ├── windows.rs   # Windows WLAN profile encoding/decoding
 │   └── windows/native.rs # Owned Native Wi-Fi API handles and buffers
 ├── service.rs       # High-level feature functions
-├── ipc.rs           # Native Messaging protocol
 └── examples/        # Runnable examples
 ```
 
@@ -141,7 +122,6 @@ crates/core/src/
 - **qr** → No core dependencies (just qrcode/image/rqrr)
 - **platform** → types, error, command helpers
 - **service** → types, qr, platform, payload
-- **ipc** → types, service
 
 This keeps dependencies acyclic and each module independently testable.
 
@@ -254,17 +234,6 @@ fn dispatch(cli: &Cli, adapter: &dyn WifiAdapter) -> Result<(), String> {
 
 This avoids duplicating the menu logic.
 
-### Host Pattern: IPC Bridge
-
-`qr-wifi-host` is the thinnest frontend — it's just a protocol translator:
-
-1. Read length-prefixed JSON from stdin
-2. Parse as `Request`
-3. Call `handle_request(request, adapter)`
-4. Write length-prefixed JSON `Response` to stdout
-
-The actual logic lives in `qr-wifi-core::ipc`.
-
 ### GUI Pattern: Tauri Commands
 
 The Tauri GUI defines one command per feature:
@@ -292,7 +261,7 @@ User action                  Core                          OS
     ↓
     current_credentials(adapter)
     └─→ adapter.current_ssid()
-        └─→ networksetup -getairportnetwork
+        └─→ CoreWLAN live interface SSID
     └─→ adapter.credentials("Home")
         └─→ security find-internet-password
     ↓
@@ -304,33 +273,6 @@ User action                  Core                          OS
     ↓
 [Output] QR art + "WIFI:..." string
 ```
-
-### Example: Browser Extension Connect
-
-```
-User action              Extension          Host              Core             OS
-───────────────────────────────────────────────────────────────────────────────
-[Extension] User clicks "Connect"
-    ↓
-    send({command: "connect_payload", payload: "WIFI:..."})
-    ↓                                                ↓
-    [Native Messaging] ──────────→ read_message() ──→
-    ↓
-    handle_request(request, adapter)
-    ↓
-    connect_payload(adapter, &payload)
-    └─→ parse_payload()          → WifiCredentials
-    └─→ adapter.connect(&creds)
-        └─→ networksetup -setairportnetwork en0 "Home" "password"
-    ↓
-    write_message({ok: true, data: {kind: "connected"}})
-    ↓                                                ↓
-    ←───────────────── [Native Messaging] ←─────────
-    ↓
-    [Extension] setStatus("Connected")
-```
-
----
 
 ## Error Handling Strategy
 
@@ -364,7 +306,7 @@ pub enum CoreError {
 
 ### Binary Error Handling
 
-Binary crates (CLI, TUI, host) convert errors to strings:
+Binary crates (CLI, TUI) convert errors to strings:
 
 ```rust
 fn main() -> ExitCode {

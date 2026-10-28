@@ -1,7 +1,9 @@
 import {
   cameraCaptureDimensions,
+  cameraErrorMessage,
   cameraVideoConstraints,
   hasCameraFrame,
+  waitForCameraStartup,
 } from "./scanner.mjs";
 import { appendConsoleText, formatScannedQr } from "./console.mjs";
 import { ScanSession } from "./scanner-state.mjs";
@@ -60,31 +62,6 @@ function print(text) {
   // scrollable chronological record for studying decode and connection stages.
   output.textContent = appendConsoleText(output.textContent, text, MAX_CONSOLE_CHARS);
   outputViewport.scrollTop = outputViewport.scrollHeight;
-}
-
-function cameraErrorMessage(error) {
-  const name = error?.name ?? "";
-  const message = error?.message ?? String(error);
-  if (!navigator.mediaDevices?.getUserMedia) {
-    return "Camera API unavailable in this webview.";
-  }
-  if (name === "NotAllowedError" || name === "SecurityError") {
-    const userAgent = navigator.userAgent ?? "";
-    if (userAgent.includes("Windows")) {
-      return "Camera permission denied. Enable desktop-app camera access in Windows Settings > Privacy and security > Camera.";
-    }
-    if (userAgent.includes("Linux")) {
-      return "Camera permission denied. Allow camera access for QR Wi-Fi RS; on Arch, install webkit2gtk-4.1, gst-plugins-good, and gst-plugin-pipewire.";
-    }
-    return "Camera permission denied. Allow camera access for QR Wi-Fi RS in macOS Privacy settings.";
-  }
-  if (name === "NotFoundError" || name === "OverconstrainedError") {
-    return "No usable camera found.";
-  }
-  if (name === "NotReadableError") {
-    return "Camera is already in use by another app.";
-  }
-  return `Camera access failed: ${message}`;
 }
 
 async function showQr(result, description) {
@@ -242,10 +219,14 @@ async function startScanning() {
   setStatus("Accessing camera", "loading");
   let requestedStream = null;
   try {
-    requestedStream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: cameraVideoConstraints(),
-    });
+    requestedStream = await waitForCameraStartup(
+      navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: cameraVideoConstraints(),
+      }),
+      "Camera access",
+      { onLateResolve: (stream) => stream.getTracks().forEach((track) => track.stop()) },
+    );
     // Stop may have been pressed while the permission prompt was open. Never
     // adopt a stream that belongs to an invalidated session.
     if (!scanSession.activate(token)) {
@@ -257,11 +238,15 @@ async function startScanning() {
     const video = $("#scan-video");
     video.muted = true;
     video.srcObject = scanStream;
-    await video.play();
+    // WebKitGTK may leave play() pending while the video is display:none.
+    // Reveal it before awaiting playback so camera frames can start arriving.
+    $("#scanner-container").classList.remove("hidden");
+    print("Camera opened. Starting preview...");
+    setStatus("Starting camera preview", "loading");
+    await waitForCameraStartup(video.play(), "Camera preview");
     if (!scanSession.isScanning(token)) return;
 
     startButton.disabled = false;
-    $("#scanner-container").classList.remove("hidden");
     setStatus("Scanning for QR code", "loading");
     print("Point camera at a Wi-Fi QR code...");
     scheduleNextScan();
@@ -270,7 +255,10 @@ async function startScanning() {
       requestedStream.getTracks().forEach((track) => track.stop());
     }
     if (!scanSession.isCurrent(token)) return;
-    const message = cameraErrorMessage(error);
+    const message = cameraErrorMessage(error, {
+      userAgent: navigator.userAgent,
+      hasCameraApi: Boolean(navigator.mediaDevices?.getUserMedia),
+    });
     print(message);
     setStatus(message, "error");
     stopScanning();

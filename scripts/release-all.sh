@@ -11,7 +11,7 @@ Example:
 
 Creates one coordinated release from canonical Gitea repository:
   1. validates clean main and both forge remotes
-  2. updates Cargo, Tauri, and browser-extension versions
+  2. updates Cargo and Tauri versions
   3. runs release/format/test/GUI checks
   4. commits and atomically pushes main plus annotated tag to Gitea
   5. Gitea push mirror syncs tag to GitHub
@@ -116,7 +116,7 @@ cargo test --locked
 cargo check --locked -p qr-wifi-gui
 
 git diff --check
-git add Cargo.toml Cargo.lock src-tauri/tauri.conf.json extension/manifest.json
+git add Cargo.toml Cargo.lock src-tauri/tauri.conf.json
 git commit -m "chore(release): $tag"
 git tag -a "$tag" -m "QR Wi-Fi RS $tag"
 

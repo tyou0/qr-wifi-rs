@@ -5,6 +5,7 @@ from pathlib import Path
 import platform
 import shutil
 import subprocess
+import tarfile
 import tempfile
 import unittest
 
@@ -24,7 +25,7 @@ class CombinedInstallTests(unittest.TestCase):
         self.destination = self.base / "installed with spaces"
         self.apps = self.base / "applications"
         self.suffix = ".exe" if WINDOWS else ""
-        self.names = ("qr-wifi", "qr-wifi-tui", "qr-wifi-host", "qr-wifi-gui")
+        self.names = ("qr-wifi", "qr-wifi-tui", "qr-wifi-gui")
         for name in self.names:
             binary = self.bin / (name + self.suffix)
             binary.write_text("#!/bin/sh\nexit 0\n")
@@ -85,6 +86,34 @@ class CombinedInstallTests(unittest.TestCase):
         result = self.run_installer()
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.destination.exists())
+
+    @unittest.skipUnless(shutil.which("bash"), "packaging requires Bash")
+    def test_package_contains_all_current_programs(self):
+        # Package a complete fixture without compiling or touching real installs.
+        scripts = self.payload / "scripts"
+        scripts.mkdir()
+        for name in ("package-suite.sh", "install.sh", "install.ps1"):
+            shutil.copy(ROOT / "scripts" / name, scripts / name)
+        icons = self.payload / "src-tauri/icons"
+        icons.mkdir(parents=True)
+        shutil.copy(self.payload / "icon.png", icons / "128x128.png")
+        for name in ("README.md", "LICENSE"):
+            shutil.copy(ROOT / name, self.payload / name)
+        target = "windows-x86_64" if WINDOWS else "linux-x86_64"
+        result = subprocess.run(
+            ["bash", (scripts / "package-suite.sh").as_posix(), "1.2.3", target, "bin"],
+            capture_output=True, text=True, cwd=self.payload,
+            env={**os.environ, "COPYFILE_DISABLE": "1"},
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        package = f"qr-wifi-rs-1.2.3-{target}"
+        with tarfile.open(self.payload / "dist" / (package + ".tar.gz")) as archive:
+            binaries = {
+                Path(member.name).name
+                for member in archive.getmembers()
+                if member.isfile() and member.name.startswith(package + "/bin/")
+            }
+        self.assertEqual(binaries, {name + self.suffix for name in self.names})
 
 
 if __name__ == "__main__":

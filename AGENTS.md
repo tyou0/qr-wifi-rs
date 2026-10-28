@@ -4,25 +4,23 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## Project Overview
 
-QR Wi-Fi RS is a cross-platform Rust toolkit for sharing Wi-Fi as QR codes and connecting from scanned/copied QR codes. The workspace contains four crates sharing a common core:
+QR Wi-Fi RS is a cross-platform Rust toolkit for sharing Wi-Fi as QR codes and connecting from scanned/copied QR codes. The workspace contains four crates, including a shared core:
 
-- **qr-wifi-core** — Shared library with domain types, `WIFI:` payload encoding/decoding, QR code generation, OS Wi-Fi adapters, and the Native Messaging IPC protocol.
+- **qr-wifi-core** — Shared library with domain types, `WIFI:` payload encoding/decoding, QR code generation, OS Wi-Fi adapters.
 - **qr-wifi-cli** — Command-line interface (`qr-wifi`). With no flags, drops into the interactive menu.
 - **qr-wifi-tui** — Terminal UI (same interactive menu, can be run directly via `qr-wifi-tui`).
-- **qr-wifi-host** — Native Messaging host for browser extension communication.
 - **qr-wifi-gui** — Tauri desktop GUI in `src-tauri/` (separate workspace member, pulls Tauri dependencies).
 
 ## Build & Test Commands
 
 ```sh
-# Build all workspace default members (core + cli + tui + host)
+# Build all workspace default members (core + cli + tui)
 cargo build
 cargo build --release
 
 # Build a specific crate
 cargo build -p qr-wifi-cli
 cargo build -p qr-wifi-tui
-cargo build -p qr-wifi-host
 cargo build -p qr-wifi-core
 
 # Tauri GUI (compile-check only; full bundle via Tauri CLI)
@@ -37,7 +35,6 @@ cargo clippy --workspace --all-targets
 cargo run -p qr-wifi-cli -- --list
 cargo run -p qr-wifi-cli -- --share
 cargo run -p qr-wifi-tui
-cargo run -p qr-wifi-host
 ```
 
 Tauri GUI requires the Tauri CLI:
@@ -58,42 +55,26 @@ The core crate is organized by responsibility:
 - **qr** — QR matrix generation → PNG/terminal art, plus image decoding (via `rqrr`)
 - **platform** — OS-specific Wi-Fi adapters (trait `WifiAdapter` with `macos`, `linux`, `windows` modules)
 - **service** — High-level feature functions used by all frontends (share, connect, list, decode)
-- **ipc** — Native Messaging protocol (`Request`/`Response` types, framing)
 
-All four binaries and the Tauri GUI call into `qr-wifi-core`; no Wi-Fi logic lives in the UI layers.
+All three frontends call into `qr-wifi-core`; no Wi-Fi logic lives in the UI layers.
 
 ### Platform Adapters
 
 Each OS implements the `WifiAdapter` trait:
 
-| Method      | macOS (`networksetup`/`security`) | Linux (`nmcli`) | Windows (Native Wi-Fi API) |
+| Method      | macOS (CoreWLAN) | Linux (NetworkManager D-Bus) | Windows (Native Wi-Fi API) |
 | ------------| ----------------------------------- | --------------- | ------------------ |
-| `current_ssid` | Multiple fallback methods including syslog parsing | `nmcli -t` | `WlanQueryInterface` |
-| `list_networks` | `networksetup -listpreferredwirelessnetworks` | `nmcli device wifi list` | `WlanGetAvailableNetworkList` |
-| `get_credentials` | Keychain via `security find-internet-password` | `nmcli -s connection show uuid ...` | `WlanGetProfile` XML |
-| `connect` | `networksetup -setairportnetwork` | `nmcli device wifi connect` | `WlanSetProfile` / `WlanConnect` |
+| `current_ssid` | Live `CWInterface.ssid` | `ActiveAccessPoint` SSID bytes | `WlanQueryInterface` |
+| `list_networks` | CoreWLAN scan | `GetAllAccessPoints` | `WlanGetAvailableNetworkList` |
+| `get_credentials` | `CWKeychainFindWiFiPassword` | `GetSettings` / `GetSecrets` | `WlanGetProfile` XML |
+| `connect` | Native association + live SSID verification | `AddAndActivateConnection2` | `WlanSetProfile` / `WlanConnect` |
+
+Linux uses the same NetworkManager system D-Bus API across distributions; NetworkManager must manage the interface. A missing compatible SSID triggers a directed scan, and joins wait for actual activation. Windows waits for native connection-complete notifications.
 
 Pure adapter parsing/profile tests compile on every test host. Windows FFI lives
 in `crates/core/src/platform/windows/native.rs` and only compiles for Windows.
 
-macOS SSID detection has special handling for when the OS returns `<redacted>` — it falls back through several methods including parsing `log show` for `airportd` entries.
-
-### Native Messaging Protocol
-
-The host communicates with the browser extension via length-prefixed JSON (standard Native Messaging format). Requests use a `command` field:
-
-| command | input | response data |
-| ------- | ----- | ------------- |
-| `current_ssid` | — | `{ ssid }` |
-| `list_networks` | — | `{ networks: [...] }` |
-| `get_credentials` | `{ ssid }` | `{ credentials }` |
-| `share_current` | — | `{ payload, png_base64 }` |
-| `share_custom` | `{ credentials }` | `{ payload, png_base64 }` |
-| `connect` | `{ credentials }` | `{ kind: "connected" }` |
-| `connect_payload` | `{ payload }` | `{ kind: "connected" }` |
-| `decode_qr` | `{ image_base64 }` | `{ credentials }` |
-
-Response envelope: `{ ok: true, data: ... }` or `{ ok: false, error: ... }`.
+macOS uses CoreWLAN directly and requires Location Services authorization to identify the connected network. The GUI requests this permission; blocked terminal builds must authorize their terminal app. Saved profiles and historical logs are never used as proof of the current connection.
 
 ## Key Design Patterns
 
@@ -101,13 +82,3 @@ Response envelope: `{ ok: true, data: ... }` or `{ ok: false, error: ... }`.
 - **Trait-based platform abstraction** — `WifiAdapter` trait lets the core logic work with any OS implementation.
 - **One-shot vs interactive** — The CLI supports both flag-based one-shot actions (`--share`, `--ssid ...`) and an interactive menu.
 - **No bundler for Tauri frontend** — The GUI webview (`frontend/`) is vanilla HTML/CSS/JS, no TypeScript, no build step.
-
-## Browser Extension Setup
-
-The Native Messaging host is registered via `scripts/install-native-host.sh`:
-
-```sh
-scripts/install-native-host.sh --chrome-extension-id <extension-id>
-```
-
-This places the manifest in the OS-specific location (e.g., `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/` on macOS) pointing at the installed `qr-wifi-host` binary.

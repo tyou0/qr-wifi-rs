@@ -43,7 +43,7 @@ if ($PrebuiltDirectory) {
         if (-not (Get-Command cargo-tauri -ErrorAction SilentlyContinue)) {
             Invoke-Cargo install tauri-cli --locked --version 2.11.4
         }
-        Invoke-Cargo build --release --locked --target $target -p qr-wifi-cli -p qr-wifi-tui -p qr-wifi-host
+        Invoke-Cargo build --release --locked --target $target -p qr-wifi-cli -p qr-wifi-tui
         Invoke-Cargo tauri build --ci --target $target --no-bundle -- --locked
         $binaries = Join-Path $env:CARGO_TARGET_DIR "$target\release"
     } finally {
@@ -53,7 +53,7 @@ if ($PrebuiltDirectory) {
 }
 
 # Check all artifacts before creating a partial installation.
-$names = @('qr-wifi', 'qr-wifi-tui', 'qr-wifi-host', 'qr-wifi-gui')
+$names = @('qr-wifi', 'qr-wifi-tui', 'qr-wifi-gui')
 foreach ($name in $names) {
     if (-not (Test-Path -LiteralPath (Join-Path $binaries "$name.exe") -PathType Leaf)) {
         throw "Missing executable: $name.exe"
@@ -77,6 +77,6 @@ if (-not $NoPathUpdate) {
     }
     $env:Path = "$bin;$env:Path"
 }
-Write-Host "Installed desktop, CLI, TUI, and native host to $InstallDirectory."
+Write-Host "Installed desktop, CLI, TUI to $InstallDirectory."
 Write-Host 'Open QR Wi-Fi RS from Start. Reopen your terminal for qr-wifi and qr-wifi-tui.'
 Write-Host 'Desktop runtime requires Microsoft Edge WebView2 (see README).'

@@ -21,8 +21,8 @@ Each operating system has its own tools and APIs for managing Wi-Fi:
 
 | OS | Primary Tool | List Networks | Get Password | Connect |
 |----|--------------|---------------|--------------|---------|
-| macOS | `networksetup`, `security` | `-listpreferredwirelessnetworks` | Keychain via `security` | `-setairportnetwork` |
-| Linux | `nmcli` (NetworkManager) | `device wifi list` | `connection show` | `device wifi connect` |
+| macOS | CoreWLAN | Native scan | CoreWLAN Keychain API | Native association + verification |
+| Linux | NetworkManager D-Bus | Access-point objects | Settings/secrets | Activation API |
 | Windows | Native Wi-Fi API | `WlanGetAvailableNetworkList` | `WlanGetProfile` XML | `WlanSetProfile` / `WlanConnect` |
 
 QR Wi-Fi RS abstracts these differences behind the **`WifiAdapter` trait**, so the core logic doesn't need to know which OS it's running on.
@@ -136,118 +136,65 @@ mod windows;
 
 ## macOS Details
 
-### SSID Detection (Multiple Fallbacks)
+The adapter calls CoreWLAN directly through Rust Objective-C bindings. It needs
+neither Swift nor CLI tools at runtime. `CWWiFiClient` supplies the current
+wireless interface without assuming an `en0` name. `CWInterface.ssid` identifies
+the current network; saved profiles and log history cannot establish this.
 
-macOS is tricky because the OS may redact the SSID as `<redacted>` in recent versions. We try multiple methods in order:
+`scanForNetworksWithSSID:includeHidden:error:` provides real visible networks
+and directed scans for a requested SSID, including hidden QR networks. Exact
+SSID bytes and meaningful whitespace are preserved. Security capabilities are
+checked before association; enterprise networks cannot be represented by the
+personal Wi-Fi credential model. `CWKeychainFindWiFiPassword` reads saved keys
+without a password-bearing subprocess.
 
-```rust
-impl MacosAdapter {
-    fn current_ssid(&self) -> Result<String> {
-        // 1. networksetup -getairportnetwork
-        if let Ok(ssid) = self.ssid_via_networksetup() {
-            return Ok(ssid);
-        }
+`associateToNetwork:password:error:` synchronously associates using an in-memory
+password. The adapter then verifies the live SSID, waiting up to 15 seconds for
+confirmation. Native errors expose numeric codes, omitting descriptions that
+might contain credentials. A failed join cannot become success merely because
+an external command exited with status zero.
 
-        // 2. ipconfig getsummary
-        if let Ok(ssid) = self.ssid_via_ipconfig() {
-            return Ok(ssid);
-        }
-
-        // 3. Swift + CoreWLAN (live SSID)
-        if let Ok(ssid) = self.ssid_via_corewlan() {
-            return Ok(ssid);
-        }
-
-        // 4. system_profiler SPAirPortDataType
-        if let Ok(ssid) = self.ssid_via_system_profiler() {
-            return Ok(ssid);
-        }
-
-        // 5. Log search for airportd NetworkName
-        self.ssid_via_log()
-    }
-}
-```
-
-### Wi-Fi Interface Detection
-
-macOS may have multiple AirPort interfaces (`en0`, `en1`, etc.). We:
-
-1. Try `networksetup -listallhardwareports` to find Wi-Fi devices
-2. Cache the result (interfaces don't change at runtime)
-3. Fall back to `en0` if detection fails
-
-### Keychain Password Retrieval
-
-```bash
-security find-internet-password -wa "$SSID" 2>/dev/null
-```
-
-This prompts the user for Keychain access on first run. The password is extracted from the command output.
-
-### Connection
-
-```bash
-networksetup -setairportnetwork "$DEVICE" "$SSID" "$PASSWORD"
-```
+macOS protects Wi-Fi identities with Location Services authorization. The GUI
+requests permission on its main run loop and includes usage descriptions in the
+bundle. Enable QR Wi-Fi RS under System Settings > Privacy & Security > Location
+Services when denied; terminal builds need their terminal app authorized.
+No location coordinates are requested. Camera permission is separate.
 
 ---
 
 ## Linux Details
 
-### nmcli (NetworkManager)
+### Native NetworkManager D-Bus
 
-QR Wi-Fi RS uses `nmcli`, which is the standard CLI for NetworkManager on most Linux distributions.
+Linux talks directly to `org.freedesktop.NetworkManager` on the system bus.
+The adapter has no shell commands, distro branches, localized labels, or
+password arguments. NetworkManager must manage the wireless interface;
+standalone iwd/wpa_supplicant configurations are not supported. The manager
+continues to own authentication, DHCP, DNS and routes. A raw kernel scan alone
+does not supply those services.
 
-### List Networks
+`GetDevices` selects managed wireless radios. `GetAllAccessPoints` supplies
+SSID bytes, security capabilities, strength and the active AP. SSID punctuation,
+Unicode and significant whitespace are preserved. A missing compatible SSID
+triggers a directed `RequestScan`; the adapter waits for `LastScan` to advance
+before looking up the requested network again. It never treats a broadcast
+network as hidden merely to force a connection.
 
-```bash
-LC_ALL=C.UTF-8 nmcli --colors no -t -f ACTIVE,SSID,SIGNAL,SECURITY device wifi --rescan no
-```
+Saved credentials come from `Settings.ListConnections`, `GetSettings`, and
+`GetSecrets`. Profile names may differ from SSIDs. Enterprise authentication
+is rejected because a personal Wi-Fi QR cannot represent it.
 
-The adapter actually requests `ACTIVE,SSID,SIGNAL,SECURITY` with `--rescan no`
-and `--colors no`, running the process with `LC_ALL=C.UTF-8`. Plain `C` would
-replace Unicode SSIDs with question marks. Terse fields are colon
-separated, with literal colons and backslashes escaped:
-```
-yes:MyNetwork:65:WPA2
-no:Cafe\:Guest:40:
-```
+`AddAndActivateConnection2` sends typed settings and secrets directly to the
+manager. A matching saved profile can be activated without re-entering its key.
+The connection is successful only after its active state is activated and the
+radio's actual SSID matches the request. Failed or timed-out new attempts are
+deactivated and their newly created profile is removed. The app does not restart
+network services or take the interface away from NetworkManager.
 
-### Get Current SSID
+Privileged requests allow the normal desktop authorization prompt. Launch the
+GUI through the desktop launcher: a process started through SSH can have different
+PolicyKit permissions even when it displays on the same Wayland session.
 
-```bash
-LC_ALL=C.UTF-8 nmcli --colors no -t -f ACTIVE,SSID device wifi --rescan no
-```
-
-### Get Credentials
-
-```bash
-nmcli -t -f UUID,TYPE connection show
-nmcli --escape no -g 802-11-wireless.ssid connection show uuid "$UUID"
-nmcli --show-secrets --escape no -t -m multiline \
-  -f 802-11-wireless,802-11-wireless-security connection show uuid "$UUID"
-```
-
-Saved profile names can differ from SSIDs, so the adapter first resolves a Wi-Fi
-profile by its actual SSID, then queries it by UUID. Multiline property names
-are stable and values retain literal punctuation and spaces. The result keeps
-key management, the selected WEP key or WPA key, and the hidden setting:
-```
-802-11-wireless-security.psk:mysecretpassword
-...
-```
-
-### Connect
-
-```bash
-nmcli device wifi connect "$SSID" password "$PASSWORD"
-```
-
-For hidden networks:
-```bash
-nmcli device wifi connect "$SSID" password "$PASSWORD" hidden yes
-```
 
 ---
 
@@ -283,7 +230,10 @@ per-user/all-user scope, while new profiles are per-user. No temporary file
 contains the password.
 
 `WlanConnect` requests a connection using the saved profile. Windows completes
-association asynchronously; a successful return means the request was accepted.
+association asynchronously. The adapter registers for ACM notifications before
+requesting the join, filters by interface and SSID, and waits up to 45 seconds
+for a successful connection-complete result. A failed request or timeout is
+returned to the frontend as an error. A timed-out attempt is cancelled.
 
 Recent Windows versions can require Location services and desktop-app location
 permission to read Wi-Fi networks. The adapter explains this setting when
@@ -294,9 +244,11 @@ to read or update profiles are also required.
 
 ## Testing Platform Code
 
-### Challenge: OS Commands Require Actual OS
+### Challenge: Native Services Require Their OS
 
-You can't run `networksetup` on Linux or `nmcli` on macOS. How do we test platform code?
+macOS CoreWLAN, Linux system D-Bus services, and Windows WLAN APIs require
+the corresponding operating system. Tests isolate native service calls from
+profile encoding and connection-completion logic.
 
 ### Strategy 1: Parse-Only Tests
 
@@ -305,7 +257,10 @@ use `cfg(any(test, target_os = "..."))`, so `cargo test` runs all parser and
 profile regressions on any supported host. Windows native SSID/security tests
 additionally run on Windows. No unit test reads or changes real Wi-Fi settings.
 
-`scripts/test-linux-nmcli.sh` also exercises the real adapter against inactive
+`scripts/test-linux-nmcli.sh` uses nmcli only to seed an isolated daemon, then
+checks native D-Bus profile generation and retrieval. A private fake D-Bus
+service checks scan completion, authorization flags, activation failure and
+request acceptance versus real completion. It also exercises the adapter against inactive
 renamed WPA2/WPA3/WEP/open profiles, including a Unicode SSID and spaces in a
 password. It requires a disposable Linux container running as root, and marks
 every interface unmanaged before starting NetworkManager. CI runs this check
@@ -363,18 +318,12 @@ This allows testing service functions without touching the OS.
 
 Run tests only on the relevant OS:
 
-```rust
-#[cfg(test)]
-#[cfg(target_os = "macos")]
-mod macos_tests {
-    use super::*;
+The macOS native security/error tests run only on macOS. For the opt-in real
+radio regression (which rejects an absent network rather than returning false
+success), run:
 
-    #[test]
-    fn test_networksetup_path() {
-        // This test only runs on macOS
-        assert!(command_exists("networksetup"));
-    }
-}
+```bash
+cargo test --locked -p qr-wifi-core --test macos_hardware -- --ignored
 ```
 
 ---
@@ -385,8 +334,8 @@ Platform adapters in QR Wi-Fi RS:
 
 1. **Hide OS differences** behind the `WifiAdapter` trait
 2. **Compile only relevant code** using `#[cfg(target_os = ...)]`
-3. **Parse CLI output** since most OSs expose Wi-Fi via commands
-4. **Handle edge cases** (macOS redaction, Windows localization)
-5. **Test parsing logic** with mock output, not real OS calls
+3. **Use native APIs** for typed Wi-Fi state and credential handling
+4. **Handle permissions and asynchronous activation** explicitly
+5. **Test domain rules and service boundaries**, then verify on real hardware
 
 This design keeps the core logic OS-agnostic while still supporting all major platforms.

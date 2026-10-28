@@ -6,6 +6,8 @@
 mod native;
 
 use serde::Deserialize;
+use std::sync::{Condvar, Mutex};
+use std::time::Duration;
 
 use crate::error::{CoreError, Result};
 #[cfg(target_os = "windows")]
@@ -13,6 +15,41 @@ use crate::platform::WifiAdapter;
 #[cfg(target_os = "windows")]
 use crate::types::WifiNetwork;
 use crate::types::{WifiCredentials, WifiSecurity};
+
+// WlanConnect only accepts a request. Its callback supplies the actual result.
+#[derive(Default)]
+struct ConnectionCompletion {
+    reason: Mutex<Option<u32>>,
+    changed: Condvar,
+}
+
+impl ConnectionCompletion {
+    fn finish(&self, reason: u32) {
+        if let Ok(mut value) = self.reason.lock() {
+            if value.is_none() {
+                *value = Some(reason);
+                self.changed.notify_all();
+            }
+        }
+    }
+
+    fn wait(&self, timeout: Duration) -> Result<()> {
+        let reason = self.reason.lock().map_err(|_| {
+            CoreError::Platform("Windows Wi-Fi completion state was interrupted".into())
+        })?;
+        let (reason, _) = self
+            .changed
+            .wait_timeout_while(reason, timeout, |value| value.is_none())
+            .map_err(|_| {
+                CoreError::Platform("Windows Wi-Fi completion state was interrupted".into())
+            })?;
+        match *reason {
+            Some(0) => Ok(()),
+            Some(code) => Err(CoreError::Platform(format!("Windows could not join the Wi-Fi network (reason {code}). Check the network's range, password and security settings."))),
+            None => Err(CoreError::Platform("Timed out waiting for Windows to join the Wi-Fi network. Check its range, password and security settings.".into())),
+        }
+    }
+}
 
 fn xml_escape(value: &str) -> String {
     value
@@ -250,6 +287,28 @@ impl WifiAdapter for WindowsAdapter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn accepting_a_request_is_not_a_successful_connection() {
+        let completion = ConnectionCompletion::default();
+        assert!(completion.wait(Duration::ZERO).is_err());
+        completion.finish(0);
+        assert!(completion.wait(Duration::ZERO).is_ok());
+    }
+
+    #[test]
+    fn failed_join_and_timeout_never_report_success() {
+        let completion = ConnectionCompletion::default();
+        completion.finish(123);
+        assert!(completion
+            .wait(Duration::ZERO)
+            .unwrap_err()
+            .to_string()
+            .contains("could not join"));
+        // A later unrelated success must not overwrite the failed attempt.
+        completion.finish(0);
+        assert!(completion.wait(Duration::ZERO).is_err());
+    }
 
     #[test]
     fn profiles_round_trip_all_security_types_and_exact_credentials() {

@@ -4,6 +4,10 @@
 <dict>
   <key>NSCameraUsageDescription</key>
   <string>QR Wi-Fi RS uses the camera to scan Wi-Fi QR codes and connect to networks.</string>
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>macOS requires Location Services permission to identify nearby and connected Wi-Fi networks. QR Wi-Fi RS does not collect your location.</string>
+  <key>NSLocationUsageDescription</key>
+  <string>QR Wi-Fi RS needs permission to identify Wi-Fi networks for connecting and sharing.</string>
   <key>NSAppTransportSecurity</key>
   <dict>
     <key>NSAllowsLocalNetworking</key>

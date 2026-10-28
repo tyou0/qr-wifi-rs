@@ -1,4 +1,4 @@
-//! Domain types shared across CLI, TUI, GUI, and the IPC host.
+//! Domain types shared across CLI, TUI, and GUI.
 
 use serde::{Deserialize, Serialize};
 
@@ -100,8 +100,7 @@ pub struct WifiCredentials {
 }
 
 /// Keep passwords out of panic messages, debug logs, and test failures.
-/// Serialization remains unchanged because IPC must carry credentials to the
-/// explicitly authorized local frontend.
+/// Serialization carries credentials to the explicitly authorized local frontend.
 impl std::fmt::Debug for WifiCredentials {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("WifiCredentials")

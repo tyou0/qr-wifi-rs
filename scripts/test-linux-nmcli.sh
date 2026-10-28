@@ -42,3 +42,9 @@ nmcli connection add type wifi con-name 'qr-wifi-test-renamed-wpa3' ifname wlan0
 
 QR_WIFI_NMCLI_FIXTURES=1 cargo test --locked -p qr-wifi-core \
   --test linux_nmcli_credentials -- --ignored
+
+QR_WIFI_NMCLI_FIXTURES=1 cargo test --locked -p qr-wifi-core \
+  --lib real_network_manager_accepts_native_profile_settings -- --ignored
+
+QR_WIFI_DBUS_FIXTURES=1 dbus-run-session -- cargo test --locked -p qr-wifi-core \
+  --test linux_dbus -- --ignored

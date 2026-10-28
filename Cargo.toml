@@ -10,14 +10,12 @@ members = [
     "crates/core",
     "crates/cli",
     "crates/tui",
-    "crates/host",
     "src-tauri",
 ]
 default-members = [
     "crates/core",
     "crates/cli",
     "crates/tui",
-    "crates/host",
 ]
 
 [workspace.package]

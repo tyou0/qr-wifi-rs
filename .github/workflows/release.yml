@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   cli-artifacts:
-    name: CLI/TUI/host (${{ matrix.target }})
+    name: CLI/TUI (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -40,7 +40,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build release binaries
-        run: cargo build --release --locked -p qr-wifi-cli -p qr-wifi-tui -p qr-wifi-host
+        run: cargo build --release --locked -p qr-wifi-cli -p qr-wifi-tui
 
       - name: Package release binaries
         shell: bash
@@ -53,18 +53,16 @@ jobs:
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             cp target/release/qr-wifi.exe "dist/$package/"
             cp target/release/qr-wifi-tui.exe "dist/$package/"
-            cp target/release/qr-wifi-host.exe "dist/$package/"
           else
             cp target/release/qr-wifi "dist/$package/"
             cp target/release/qr-wifi-tui "dist/$package/"
-            cp target/release/qr-wifi-host "dist/$package/"
           fi
 
           cp README.md "dist/$package/"
           if [[ -f LICENSE ]]; then cp LICENSE "dist/$package/"; fi
           tar -czf "dist/$package.tar.gz" -C dist "$package"
 
-      - name: Upload CLI/TUI/host artifact
+      - name: Upload CLI/TUI artifact
         uses: actions/upload-artifact@v7
         with:
           name: qr-wifi-rs-cli-${{ github.ref_name }}-${{ matrix.target }}
@@ -108,7 +106,7 @@ jobs:
           sudo apt-get install -y libfuse2 || sudo apt-get install -y libfuse2t64
 
       - name: Build terminal tools for combined installer
-        run: cargo build --release --locked -p qr-wifi-cli -p qr-wifi-tui -p qr-wifi-host
+        run: cargo build --release --locked -p qr-wifi-cli -p qr-wifi-tui
 
       - name: Verify Rust and desktop contracts before release
         run: |
@@ -207,32 +205,6 @@ jobs:
           name: qr-wifi-rs-desktop-${{ github.ref_name }}-${{ matrix.target }}
           path: dist/*
 
-  extension-artifact:
-    name: Browser extension package
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Lint extension
-        run: npx --yes web-ext@8.10.0 lint --source-dir extension --warnings-as-errors
-
-      - name: Package unsigned extension
-        shell: bash
-        run: |
-          set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          mkdir -p dist
-          npx --yes web-ext@8.10.0 build --source-dir extension --artifacts-dir dist --overwrite-dest
-          mv dist/*.zip "dist/qr-wifi-rs-browser-extension-${version}-unsigned.zip"
-
-      - name: Upload extension artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: qr-wifi-rs-browser-extension-${{ github.ref_name }}
-          path: dist/*.zip
-
   arch-install:
     name: Arch Linux combined archive
     needs: desktop-artifacts
@@ -265,7 +237,7 @@ jobs:
   publish-github-release:
     name: Publish GitHub release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [cli-artifacts, desktop-artifacts, extension-artifact, arch-install]
+    needs: [cli-artifacts, desktop-artifacts, arch-install]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -291,6 +263,6 @@ jobs:
           files: dist/*
           generate_release_notes: true
           body: |
-            Combined desktop + CLI + TUI + native-host installation: download qr-wifi-rs-VERSION-PLATFORM.tar.gz, extract, then run bash install.sh (macOS/Linux) or powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 (Windows). Rust is not required. See README for OS runtime prerequisites. Separate desktop-* installers remain desktop-only.
-            Signing status: macOS bundles are ad-hoc signed; Windows installers and the browser extension are unsigned.
+            Combined desktop + CLI + TUI installation: download qr-wifi-rs-VERSION-PLATFORM.tar.gz, extract, then run bash install.sh (macOS/Linux) or powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 (Windows). Rust is not required. See README for OS runtime prerequisites. Separate desktop-* installers remain desktop-only.
+            Signing status: macOS bundles are ad-hoc signed; Windows installers are unsigned.
             Verify downloaded files against the versioned SHA256SUMS file.

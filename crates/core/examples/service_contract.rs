@@ -1,7 +1,7 @@
 //! Demonstrate the shared service layer without touching real Wi-Fi state.
 //!
-//! This is the key architecture lesson in executable form: CLI, TUI, GUI, and
-//! browser extension code should all call the same functions shown here.
+//! This is the key architecture lesson in executable form: CLI, TUI, and GUI
+//! code should all call the same functions shown here.
 //!
 //! Run with:
 //!

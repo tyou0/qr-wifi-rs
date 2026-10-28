@@ -1,360 +1,262 @@
-//! macOS Wi-Fi adapter.
-//!
-//! Active SSID detection uses several methods in order and falls back to the
-//! syslog when the OS redacts the name. This mirrors the proven Bun adapter in
-//! `qr_wifi_bun/src/platform/macosWifi.ts`, which is why it detects the current
-//! network reliably on modern macOS where a single method often returns
-//! `<redacted>`:
-//!
-//! 1. `networksetup -getairportnetwork <device>` (primary)
-//! 2. `ipconfig getsummary <device>`
-//! 3. `swift` CoreWLAN (live SSID, then first saved profile)
-//! 4. `system_profiler SPAirPortDataType -json`
-//!
-//! If any step reports `<redacted>`, the most recent `airportd` log entry is
-//! consulted.
+//! Native CoreWLAN adapter. Never infer the current SSID from saved profiles
+//! or historical logs, and never send a password through process arguments.
 
-use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use serde_json::Value;
+use objc2::rc::{autoreleasepool, Retained};
+use objc2_core_location::{CLAuthorizationStatus, CLLocationManager};
+use objc2_core_wlan::{
+    CWInterface, CWKeychainDomain, CWKeychainFindWiFiPassword, CWNetwork, CWSecurity, CWWiFiClient,
+};
+use objc2_foundation::{NSData, NSError, NSString};
 
 use crate::error::{CoreError, Result};
-use crate::platform::{run, run_redacted, try_capture, WifiAdapter};
+use crate::platform::WifiAdapter;
 use crate::types::{WifiCredentials, WifiNetwork, WifiSecurity};
 
-const NETWORKSETUP: &str = "/usr/sbin/networksetup";
-const IPCONFIG: &str = "/usr/sbin/ipconfig";
-const SYSTEM_PROFILER: &str = "/usr/sbin/system_profiler";
-const SECURITY: &str = "/usr/bin/security";
-const SWIFT: &str = "/usr/bin/swift";
-const LOG: &str = "/usr/bin/log";
-const DEFAULT_INTERFACE: &str = "en0";
+#[derive(Default)]
+pub struct MacosAdapter;
 
-/// CoreWLAN snippet: live SSID first, then the first saved network profile.
-/// It is executed through `/usr/bin/swift` and needs no compilation step.
-const COREWLAN_SWIFT: &str = r#"
-import CoreWLAN
-import Foundation
-
-let interface = CWWiFiClient.shared().interface()
-if let ssid = interface?.ssid(), !ssid.isEmpty {
-  print(ssid)
-} else if let configuration = interface?.configuration(),
-          let profiles = configuration.value(forKey: "networkProfiles") as? NSOrderedSet,
-          let first = profiles.firstObject as? CWNetworkProfile,
-          let ssid = first.ssid,
-          !ssid.isEmpty {
-  print(ssid.replacingOccurrences(of: "\u{2019}", with: "'").replacingOccurrences(of: "\u{2018}", with: "'").trimmingCharacters(in: .whitespacesAndNewlines))
-}
-"#;
-
-/// A usable SSID is non-empty and not redacted by the OS.
-pub fn usable_ssid(value: &str) -> Option<String> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("<redacted>") {
-        None
-    } else {
-        Some(trimmed.to_string())
-    }
-}
-
-/// Parse `networksetup -listallhardwareports` to find the Wi-Fi/AirPort device.
-pub fn wifi_device(hardware_ports: &str) -> String {
-    let mut in_wifi = false;
-    for line in hardware_ports.lines() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("Hardware Port:") {
-            let port = rest.trim();
-            in_wifi = port == "Wi-Fi" || port == "AirPort";
-        } else if in_wifi {
-            if let Some(rest) = trimmed.strip_prefix("Device:") {
-                let dev = rest.trim();
-                if !dev.is_empty() {
-                    return dev.to_string();
-                }
-            }
-        }
-    }
-    DEFAULT_INTERFACE.to_string()
-}
-
-/// Parse `networksetup -getairportnetwork` output for the current SSID.
-/// Returns `Some("<redacted>")` so callers can trigger the syslog fallback.
-pub fn parse_networksetup_airport(output: &str) -> Option<String> {
-    if output.contains("<redacted>") {
-        return Some("<redacted>".to_string());
-    }
-    for line in output.lines() {
-        if let Some(idx) = line.find("Current Wi-Fi Network:") {
-            return usable_ssid(&line[idx + "Current Wi-Fi Network:".len()..]);
-        }
-    }
-    None
-}
-
-/// Parse `ipconfig getsummary` output for the current SSID.
-///
-/// Lines look like `          SSID : Upstairs`. We left-trim first, then match
-/// the `SSID` token and split on the first `:`, so a `BSSID :` line (which
-/// starts with `B`) can never be mistaken for the SSID.
-pub fn parse_ipconfig_summary(output: &str) -> Option<String> {
-    if output.contains("<redacted>") {
-        return Some("<redacted>".to_string());
-    }
-    for line in output.lines() {
-        let trimmed = line.trim_start();
-        let Some(rest) = trimmed.strip_prefix("SSID") else {
-            continue;
-        };
-        let Some(value) = rest.trim_start().strip_prefix(':') else {
-            continue;
-        };
-        if let Some(ssid) = usable_ssid(value) {
-            return Some(ssid);
-        }
-    }
-    None
-}
-
-/// Parse `system_profiler SPAirPortDataType -json` for the interface's network.
-pub fn parse_system_profiler(output: &str, device: &str) -> Option<String> {
-    let trimmed = output.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    let root: Value = serde_json::from_str(trimmed).ok()?;
-    let airport = root.get("SPAirPortDataType")?.as_array()?;
-    for item in airport {
-        let Some(interfaces) = item
-            .get("spairport_airport_interfaces")
-            .and_then(|v| v.as_array())
-        else {
-            continue;
-        };
-        for interface in interfaces {
-            let name = interface.get("_name").and_then(|v| v.as_str());
-            if name == Some(device) {
-                if let Some(network) = interface.get("spairport_current_network_information") {
-                    if let Some(name) = network.get("_name").and_then(|v| v.as_str()) {
-                        if let Some(ssid) = usable_ssid(name) {
-                            return Some(ssid);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
-/// Parse `networksetup -listpreferredwirelessnetworks` into network entries.
-pub fn parse_preferred_networks(output: &str) -> Vec<WifiNetwork> {
-    let mut networks = Vec::new();
-    let mut started = false;
-    for line in output.lines() {
-        let ssid = line.trim();
-        if ssid.is_empty() {
-            continue;
-        }
-        if !started {
-            // First non-empty line is a header such as
-            // "Preferred networks on en0:".
-            started = true;
-            continue;
-        }
-        networks.push(WifiNetwork {
-            ssid: ssid.to_string(),
-            security: WifiSecurity::Wpa,
-            signal: None,
-            active: false,
-        });
-    }
-    networks
-}
-
-fn ssid_from_syslog() -> Option<String> {
-    let output = try_capture(
-        LOG,
-        &[
-            "show",
-            "--last",
-            "10m",
-            "--predicate",
-            "process == 'airportd' && message contains 'NetworkName'",
-        ],
-    )?;
-    let mut found: Option<String> = None;
-    for chunk in output.split("NetworkName = ").skip(1) {
-        let value = chunk.split(';').next().unwrap_or("").trim();
-        if !value.is_empty() {
-            found = Some(value.trim_matches('"').to_string());
-        }
-    }
-    found.filter(|s| !s.is_empty())
-}
-
-/// Resolve a candidate that may be the sentinel `"<redacted>"`.
-fn resolve_candidate(candidate: String) -> Result<String> {
-    if candidate == "<redacted>" {
-        ssid_from_syslog().ok_or(CoreError::NoActiveNetwork)
-    } else {
-        Ok(candidate)
-    }
-}
-
-/// macOS Wi-Fi adapter. The Wi-Fi device is constant for a process, so it is
-/// resolved once. The active SSID is also cached briefly so repeated list/share
-/// calls do not re-run the (slow) multi-method detection chain.
-pub struct MacosAdapter {
-    ssid_cache: Mutex<Option<(Instant, String)>>,
-}
-
-impl Default for MacosAdapter {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+const PRIVACY_HELP: &str = "macOS did not expose the Wi-Fi name. Enable Location Services for QR Wi-Fi RS in System Settings > Privacy & Security > Location Services, then retry. For a terminal build, authorize the terminal app.";
 
 impl MacosAdapter {
     pub fn new() -> Self {
-        Self {
-            ssid_cache: Mutex::new(None),
-        }
+        Self
     }
+}
 
-    /// Resolve the Wi-Fi device once per process (it does not change).
-    fn device(&self) -> String {
-        static DEVICE: OnceLock<String> = OnceLock::new();
-        DEVICE
-            .get_or_init(|| {
-                try_capture(NETWORKSETUP, &["-listallhardwareports"])
-                    .map(|output| wifi_device(&output))
-                    .unwrap_or_else(|| DEFAULT_INTERFACE.to_string())
-            })
-            .clone()
+fn interface() -> Result<Retained<CWInterface>> {
+    // SAFETY: CoreWLAN returns retained framework objects; each operation keeps
+    // its interface on its calling worker thread and inside an autorelease pool.
+    let interface = unsafe { CWWiFiClient::sharedWiFiClient().interface() }
+        .ok_or_else(|| CoreError::Platform("No Wi-Fi interface is available".into()))?;
+    if !unsafe { interface.powerOn() } {
+        return Err(CoreError::Platform(
+            "Wi-Fi is off. Enable Wi-Fi and retry.".into(),
+        ));
     }
+    Ok(interface)
+}
 
-    fn current_ssid_inner(&self) -> Result<String> {
-        const TTL: Duration = Duration::from_secs(3);
+fn platform_error(operation: &str, error: &NSError) -> CoreError {
+    // Descriptions/userInfo may contain credentials. Expose only the numeric code.
+    CoreError::Platform(format!(
+        "CoreWLAN {operation} failed (code {}). Check Wi-Fi and Location Services permissions.",
+        error.code()
+    ))
+}
 
-        if let Ok(cache) = self.ssid_cache.lock() {
-            if let Some((at, ssid)) = cache.as_ref() {
-                if at.elapsed() < TTL {
-                    return Ok(ssid.clone());
-                }
+fn current(interface: &CWInterface) -> Result<String> {
+    unsafe { interface.ssid() }
+        .map(|s| s.to_string())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            if unsafe { interface.wlanChannel() }.is_some() {
+                CoreError::Platform(PRIVACY_HELP.into())
+            } else {
+                CoreError::NoActiveNetwork
             }
-        }
+        })
+}
 
-        let device = self.device();
-        let result = self.detect_ssid(&device);
-
-        if let Ok(ref ssid) = result {
-            if let Ok(mut cache) = self.ssid_cache.lock() {
-                *cache = Some((Instant::now(), ssid.clone()));
-            }
+fn security(value: CWSecurity) -> Option<WifiSecurity> {
+    match value {
+        CWSecurity::None => Some(WifiSecurity::Nopass),
+        CWSecurity::WEP => Some(WifiSecurity::Wep),
+        CWSecurity::WPAPersonal | CWSecurity::WPAPersonalMixed | CWSecurity::Personal => {
+            Some(WifiSecurity::Wpa)
         }
-        result
+        CWSecurity::WPA2Personal => Some(WifiSecurity::Wpa2),
+        CWSecurity::WPA3Personal | CWSecurity::WPA3Transition => Some(WifiSecurity::Wpa3),
+        _ => None, // Enterprise and OWE need a richer credential model.
     }
+}
 
-    /// Run the multi-method detection chain for a known device.
-    fn detect_ssid(&self, device: &str) -> Result<String> {
-        if let Some(output) = try_capture(NETWORKSETUP, &["-getairportnetwork", device]) {
-            if let Some(candidate) = parse_networksetup_airport(&output) {
-                return resolve_candidate(candidate);
-            }
-        }
+fn compatible(network: &CWNetwork, requested: WifiSecurity) -> bool {
+    let kinds: &[CWSecurity] = match requested {
+        WifiSecurity::Nopass => &[CWSecurity::None],
+        WifiSecurity::Wep => &[CWSecurity::WEP],
+        WifiSecurity::Wpa => &[
+            CWSecurity::WPAPersonal,
+            CWSecurity::WPAPersonalMixed,
+            CWSecurity::WPA2Personal,
+            CWSecurity::WPA3Personal,
+            CWSecurity::WPA3Transition,
+        ],
+        WifiSecurity::Wpa2 => &[
+            CWSecurity::WPA2Personal,
+            CWSecurity::WPAPersonalMixed,
+            CWSecurity::WPA3Transition,
+        ],
+        WifiSecurity::Wpa3 => &[CWSecurity::WPA3Personal, CWSecurity::WPA3Transition],
+    };
+    kinds
+        .iter()
+        .any(|kind| unsafe { network.supportsSecurity(*kind) })
+}
 
-        if let Some(output) = try_capture(IPCONFIG, &["getsummary", device]) {
-            if let Some(candidate) = parse_ipconfig_summary(&output) {
-                return resolve_candidate(candidate);
-            }
-        }
+fn network_security(network: &CWNetwork) -> Option<WifiSecurity> {
+    [
+        CWSecurity::WPA3Personal,
+        CWSecurity::WPA2Personal,
+        CWSecurity::WPAPersonal,
+        CWSecurity::WEP,
+        CWSecurity::None,
+    ]
+    .into_iter()
+    .find(|kind| unsafe { network.supportsSecurity(*kind) })
+    .and_then(security)
+}
 
-        if let Some(output) = try_capture(SWIFT, &["-e", COREWLAN_SWIFT]) {
-            for line in output.lines() {
-                if let Some(ssid) = usable_ssid(line) {
-                    return Ok(ssid);
-                }
-            }
-        }
-
-        if let Some(output) = try_capture(SYSTEM_PROFILER, &["SPAirPortDataType", "-json"]) {
-            if let Some(candidate) = parse_system_profiler(&output, device) {
-                return resolve_candidate(candidate);
-            }
-        }
-
-        Err(CoreError::NoActiveNetwork)
+fn scan(
+    interface: &CWInterface,
+    ssid: Option<&str>,
+    hidden: bool,
+) -> Result<Vec<Retained<CWNetwork>>> {
+    let data = ssid.map(|s| NSData::with_bytes(s.as_bytes()));
+    let results =
+        unsafe { interface.scanForNetworksWithSSID_includeHidden_error(data.as_deref(), hidden) }
+            .map_err(|e| platform_error("scan", &e))?;
+    let networks = results.to_vec();
+    if !networks.is_empty() && networks.iter().all(|n| unsafe { n.ssidData() }.is_none()) {
+        return Err(CoreError::Platform(PRIVACY_HELP.into()));
     }
+    Ok(networks)
+}
+
+fn matches(network: &CWNetwork, ssid: &str) -> bool {
+    unsafe { network.ssidData() }.is_some_and(|data| data.to_vec() == ssid.as_bytes())
 }
 
 impl WifiAdapter for MacosAdapter {
     fn current_ssid(&self) -> Result<String> {
-        self.current_ssid_inner()
+        autoreleasepool(|_| {
+            let interface = interface()?;
+            current(&interface)
+        })
     }
 
     fn list_networks(&self) -> Result<Vec<WifiNetwork>> {
-        let device = self.device();
-        let output = run(NETWORKSETUP, &["-listpreferredwirelessnetworks", &device])?;
-        let mut networks = parse_preferred_networks(&output);
-
-        if let Ok(current) = self.current_ssid_inner() {
-            let mut seen_active = false;
-            for network in &mut networks {
-                if network.ssid == current {
-                    network.active = true;
-                    seen_active = true;
+        autoreleasepool(|_| {
+            let interface = interface()?;
+            let active = current(&interface).ok();
+            let mut networks: Vec<WifiNetwork> = Vec::new();
+            for network in scan(&interface, None, false)? {
+                let Some(ssid) = (unsafe { network.ssid() }).map(|s| s.to_string()) else {
+                    continue;
+                };
+                let Some(security) = network_security(&network) else {
+                    continue;
+                };
+                if networks
+                    .iter()
+                    .any(|n| n.ssid == ssid && n.security == security)
+                {
+                    continue;
                 }
+                networks.push(WifiNetwork {
+                    active: active.as_ref() == Some(&ssid),
+                    ssid,
+                    security,
+                    signal: Some(((unsafe { network.rssiValue() } + 100) * 2).clamp(0, 100) as u8),
+                });
             }
-            if !seen_active && !networks.iter().any(|n| n.ssid == current) {
-                networks.insert(
-                    0,
-                    WifiNetwork {
-                        ssid: current,
-                        security: WifiSecurity::Wpa,
-                        signal: None,
-                        active: true,
-                    },
-                );
-            }
-        }
-
-        crate::types::sort_networks(&mut networks);
-        Ok(networks)
+            crate::types::sort_networks(&mut networks);
+            Ok(networks)
+        })
     }
 
     fn credentials(&self, ssid: &str) -> Result<WifiCredentials> {
-        let password = run(SECURITY, &["find-generic-password", "-wa", ssid])
-            .ok()
-            .map(|output| output.trim().to_string())
-            .filter(|p| !p.is_empty());
-
-        Ok(WifiCredentials {
-            ssid: ssid.to_string(),
-            security: WifiSecurity::Wpa,
-            password,
-            hidden: false,
+        autoreleasepool(|_| {
+            let interface = interface()?;
+            let active = current(&interface).ok();
+            let security = if active.as_deref() == Some(ssid) {
+                security(unsafe { interface.security() })
+            } else {
+                scan(&interface, Some(ssid), true)?.iter().find(|n| matches(n, ssid)).and_then(|n| network_security(n))
+            }.ok_or_else(|| CoreError::Platform("Could not determine a supported personal Wi-Fi security type. Use Custom to enter the network details.".into()))?;
+            let mut credentials = WifiCredentials::new(ssid, security);
+            if security.requires_password() {
+                let data = NSData::with_bytes(ssid.as_bytes());
+                for domain in [CWKeychainDomain::User, CWKeychainDomain::System] {
+                    let mut pointer: *mut NSString = std::ptr::null_mut();
+                    // Find returns a borrowed/autoreleased NSString, kept alive
+                    // by this pool. Copy its contents; do not assume +1 ownership.
+                    let status = unsafe { CWKeychainFindWiFiPassword(domain, &data, &mut pointer) };
+                    if status == 0 && !pointer.is_null() {
+                        credentials.password = Some(unsafe { &*pointer }.to_string());
+                        break;
+                    }
+                }
+            }
+            Ok(credentials)
         })
     }
 
     fn connect(&self, credentials: &WifiCredentials) -> Result<()> {
-        let device = self.device();
-        let mut args: Vec<String> = vec![
-            "-setairportnetwork".into(),
-            device,
-            credentials.ssid.clone(),
-        ];
-        if credentials.security != WifiSecurity::Nopass {
-            if let Some(password) = &credentials.password {
-                if !password.trim().is_empty() {
-                    args.push(password.clone());
-                }
+        autoreleasepool(|_| {
+            let interface = interface()?;
+            let networks = scan(&interface, Some(&credentials.ssid), credentials.hidden)?;
+            let matching: Vec<_> = networks
+                .iter()
+                .filter(|n| matches(n, &credentials.ssid))
+                .collect();
+            if matching.is_empty() {
+                return Err(CoreError::NetworkUnavailable(credentials.ssid.clone()));
             }
-        }
-        let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        run_redacted(NETWORKSETUP, &arg_refs)?;
-        Ok(())
+            let network = matching
+                .into_iter()
+                .filter(|n| compatible(n, credentials.security))
+                .max_by_key(|n| unsafe { n.rssiValue() })
+                .ok_or_else(|| {
+                    CoreError::Platform(
+                        "The QR security type does not match the visible Wi-Fi network".into(),
+                    )
+                })?;
+            // Confirm identity access before changing networks: without it we
+            // cannot verify the requested SSID after association. The static
+            // query avoids creating a location manager on a worker run loop.
+            #[allow(deprecated)]
+            let authorization = unsafe { CLLocationManager::authorizationStatus_class() };
+            if !matches!(
+                authorization,
+                CLAuthorizationStatus::AuthorizedAlways
+                    | CLAuthorizationStatus::AuthorizedWhenInUse
+            ) {
+                return Err(CoreError::Platform(PRIVACY_HELP.into()));
+            }
+            let password = if credentials.security.requires_password() {
+                Some(NSString::from_str(
+                    credentials
+                        .password
+                        .as_deref()
+                        .filter(|p| !p.is_empty())
+                        .ok_or_else(|| {
+                            CoreError::Platform("This Wi-Fi network requires a password".into())
+                        })?,
+                ))
+            } else {
+                None
+            };
+            unsafe { interface.associateToNetwork_password_error(network, password.as_deref()) }
+                .map_err(|e| platform_error("association", &e))?;
+            // Association is synchronous; still verify the live SSID rather than
+            // treating acceptance, an old cache, or a saved profile as success.
+            let deadline = Instant::now() + Duration::from_secs(15);
+            loop {
+                match current(&interface) {
+                    Ok(ssid) if ssid == credentials.ssid => return Ok(()),
+                    Err(CoreError::Platform(message)) => return Err(CoreError::Platform(message)),
+                    _ => {}
+                }
+                if Instant::now() >= deadline {
+                    return Err(CoreError::Platform(
+                        "macOS did not confirm connection to the requested Wi-Fi network".into(),
+                    ));
+                }
+                std::thread::sleep(Duration::from_millis(250));
+            }
+        })
     }
 }
 
@@ -363,98 +265,41 @@ mod tests {
     use super::*;
 
     #[test]
-    fn usable_ssid_filters_redacted_and_empty() {
-        assert_eq!(usable_ssid("Home"), Some("Home".into()));
-        assert_eq!(usable_ssid("  Spaced  "), Some("Spaced".into()));
-        assert_eq!(usable_ssid("<redacted>"), None);
-        assert_eq!(usable_ssid("   "), None);
-        assert_eq!(usable_ssid(""), None);
-    }
-
-    #[test]
-    fn parses_wifi_device() {
-        let sample = "\
-Hardware Port: Bluetooth
-Device: en6
-Hardware Port: Wi-Fi
-Device: en0
-Hardware Port: Thunderbolt 1
-Device: bridge0
-";
-        assert_eq!(wifi_device(sample), "en0");
-    }
-
-    #[test]
-    fn falls_back_to_en0_when_unknown() {
-        let sample = "Hardware Port: Bluetooth\nDevice: en6\n";
-        assert_eq!(wifi_device(sample), DEFAULT_INTERFACE);
-        assert_eq!(wifi_device(""), DEFAULT_INTERFACE);
-    }
-
-    #[test]
-    fn parses_airport_network() {
-        let out = "Current Wi-Fi Network: Upstairs\n";
-        assert_eq!(parse_networksetup_airport(out), Some("Upstairs".into()));
-        assert_eq!(
-            parse_networksetup_airport("<redacted>"),
-            Some("<redacted>".into())
-        );
-        assert_eq!(parse_networksetup_airport("nothing here"), None);
-    }
-
-    #[test]
-    fn parses_ipconfig_summary() {
-        let out = "\
-          SSID : Upstairs
-          BSSID : aa:bb:cc:dd:ee:ff
-";
-        assert_eq!(parse_ipconfig_summary(out), Some("Upstairs".into()));
-        assert_eq!(
-            parse_ipconfig_summary("  SSID : <redacted>"),
-            Some("<redacted>".into())
-        );
-        // A BSSID line must never be mistaken for the SSID, even if the SSID
-        // line is absent or empty.
-        assert_eq!(
-            parse_ipconfig_summary("  BSSID : aa:bb:cc:dd:ee:ff\n"),
-            None
-        );
-        assert_eq!(parse_ipconfig_summary("  SSID :\n  BSSID : aa:bb\n"), None);
-    }
-
-    #[test]
-    fn parses_preferred_networks() {
-        let out = "\
-Preferred networks on en0:
-    Home
-    Guest
-    Coffee Shop
-";
-        let nets = parse_preferred_networks(out);
-        assert_eq!(
-            nets.iter().map(|n| n.ssid.as_str()).collect::<Vec<_>>(),
-            vec!["Home", "Guest", "Coffee Shop"]
-        );
-        assert!(nets.iter().all(|n| !n.active));
-    }
-
-    #[test]
-    fn parses_system_profiler_json() {
-        let json = r#"{
-  "SPAirPortDataType": [
-    {
-      "spairport_airport_interfaces": [
-        {
-          "_name": "en0",
-          "spairport_current_network_information": { "_name": "Upstairs" }
+    fn wpa_security_types_map_to_wifi_qr_types() {
+        for (native, expected) in [
+            (CWSecurity::WPAPersonal, WifiSecurity::Wpa),
+            (CWSecurity::WPAPersonalMixed, WifiSecurity::Wpa),
+            (CWSecurity::Personal, WifiSecurity::Wpa),
+            (CWSecurity::WPA2Personal, WifiSecurity::Wpa2),
+            (CWSecurity::WPA3Personal, WifiSecurity::Wpa3),
+            (CWSecurity::WPA3Transition, WifiSecurity::Wpa3),
+        ] {
+            assert_eq!(security(native), Some(expected));
         }
-      ]
     }
-  ]
-}"#;
-        assert_eq!(parse_system_profiler(json, "en0"), Some("Upstairs".into()));
-        assert_eq!(parse_system_profiler(json, "en5"), None);
-        assert_eq!(parse_system_profiler("not json", "en0"), None);
-        assert_eq!(parse_system_profiler("", "en0"), None);
+
+    #[test]
+    fn open_and_wep_security_types_map_to_wifi_qr_types() {
+        assert_eq!(security(CWSecurity::None), Some(WifiSecurity::Nopass));
+        assert_eq!(security(CWSecurity::WEP), Some(WifiSecurity::Wep));
+    }
+
+    #[test]
+    fn enterprise_and_unknown_security_are_not_shared_as_personal() {
+        assert_eq!(security(CWSecurity::WPA2Enterprise), None);
+        assert_eq!(security(CWSecurity::Unknown), None);
+        assert_eq!(security(CWSecurity::WPA2Personal), Some(WifiSecurity::Wpa2));
+        assert_eq!(security(CWSecurity::None), Some(WifiSecurity::Nopass));
+    }
+
+    #[test]
+    fn native_errors_do_not_include_remote_descriptions() {
+        use objc2_foundation::ns_string;
+        let error = unsafe {
+            NSError::errorWithDomain_code_userInfo(ns_string!("secret-domain"), -3905, None)
+        };
+        let message = platform_error("scan", &error).to_string();
+        assert!(message.contains("-3905"));
+        assert!(!message.contains("secret-domain"));
     }
 }

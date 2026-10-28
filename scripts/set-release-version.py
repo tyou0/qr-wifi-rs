@@ -21,10 +21,10 @@ def parse_version(value: str) -> str:
             raise ValueError("components must be canonical decimal integers")
         number = int(component)
         if number > 65_535:
-            raise ValueError("Chrome extension components must be <= 65535")
+            raise ValueError("Release version components must be <= 65535")
         parsed.append(number)
     if not any(parsed):
-        raise ValueError("Chrome extension version must be greater than 0.0.0")
+        raise ValueError("Release version must be greater than 0.0.0")
     return value
 
 
@@ -41,7 +41,7 @@ def update(root: Path, version: str) -> None:
         raise RuntimeError("workspace.package version was not updated exactly once")
     cargo.write_text(updated)
 
-    for relative in ("src-tauri/tauri.conf.json", "extension/manifest.json"):
+    for relative in ("src-tauri/tauri.conf.json",):
         path = root / relative
         document = json.loads(path.read_text())
         document["version"] = version

@@ -8,8 +8,7 @@ travel, which boundaries are trusted, and which risks remain.
 The application is local-only. It has no server and sends no telemetry.
 
 1. A frontend asks for a feature.
-2. The desktop app calls a Tauri command, or a browser extension calls the
-   registered Native Messaging host.
+2. The desktop app calls a Tauri command; CLI and TUI call the core directly.
 3. `qr-wifi-core` invokes the operating system's Wi-Fi tooling.
 4. Credentials return only to that local frontend and may be encoded into a QR.
 
@@ -22,29 +21,24 @@ Anyone who can see or copy either value can join that network.
   shell syntax.
 - Sensitive command arguments are redacted from returned errors.
 - `WifiCredentials` redacts passwords from Rust `Debug` output.
-- Native Messaging request and response sizes are bounded before allocation.
 - Encoded image size, decoded dimensions, and decoder allocations are bounded.
-- Chrome and Firefox receive separate host manifests with explicit extension
-  allowlists.
 - Tauri loads local assets under a restrictive Content Security Policy.
 - Windows Wi-Fi profiles are passed directly to the Native Wi-Fi API; plaintext
   passwords are not written to temporary profile files.
-- The extension requests only the `nativeMessaging` permission.
+- Linux uses NetworkManager's typed D-Bus API. Passwords remain in memory and
+  the OS credential store; no Wi-Fi subprocess receives password arguments.
+  D-Bus error descriptions are omitted because a daemon could quote a secret.
 
 ## Residual risks
 
-- `networksetup` and `nmcli` require passwords as process arguments. Other local
-  processes with sufficient OS privileges may observe those arguments briefly.
+- macOS uses CoreWLAN with in-memory passwords, avoiding password-bearing
+  process arguments. Wi-Fi identity access requires Location Services permission.
 - Ad-hoc macOS signing protects bundle integrity but does not establish a trusted
   developer identity. Downloaded builds still require manual approval in macOS.
-- Unsigned Firefox packages are for temporary development loading. Permanent
-  Firefox installation requires Mozilla signing.
 - Tauri's current Linux WebKit stack depends on unmaintained GTK3 Rust bindings
   and `glib 0.18`, which carries RUSTSEC-2024-0429. The affected iterator is
   upstream code; keep Tauri/WebKit updated and treat Linux desktop as an open
   dependency risk until Tauri moves to maintained bindings.
-- Native Messaging trusts the browser's extension-ID check. Register manifests
-  only for extension builds you trust.
 - Virtual machines can verify compilation, tests, installers, and protocol
   behavior. Real Wi-Fi radios, camera permissions, and OS credential stores need
   physical-device tests.
@@ -56,8 +50,6 @@ cargo fmt --all -- --check
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
 cargo audit
-sh scripts/test-install-native-host.sh
-npx --yes web-ext@8 lint --source-dir extension --warnings-as-errors
 ```
 
 ## Study exercise

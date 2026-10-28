@@ -18,11 +18,8 @@ It runs on pushes, pull requests, and manual dispatch:
 - `cargo clippy --locked --workspace --all-targets -- -D warnings`
 - `cargo test --locked`
 - `cargo check --locked -p qr-wifi-gui`
-- process-level Native Messaging host test
 - `cargo audit`
-- Chrome/Firefox extension lint
 - Homebrew formula Ruby syntax check
-- native-host installer syntax and behavior test
 - combined installer installation, upgrade, missing-artifact, and wrong-platform tests
 
 The Rust job runs on:
@@ -60,8 +57,7 @@ Run from a clean, synchronized `main` checkout on Podman:
 ```
 
 The script validates Gitea/GitHub refs, updates `Cargo.toml`, `Cargo.lock`,
-`src-tauri/tauri.conf.json`, and `extension/manifest.json`, runs the packaging
-contract plus Rust release gates,
+and `src-tauri/tauri.conf.json`, runs the packaging contract plus Rust release gates,
 creates an annotated `v0.2.2` tag, and atomically pushes `main` and the tag to the
 canonical `gitea` remote. Gitea's sync-on-commit push mirror then sends both refs
 to GitHub. The mirrored `v*` tag triggers GitHub Actions and creates the GitHub
@@ -84,12 +80,11 @@ artifact collisions when Gitea synchronizes the release tag to GitHub.
 
 The release also contains:
 
-- `qr-wifi-rs-VERSION-PLATFORM.tar.gz`: desktop app + CLI + TUI + native host,
+- `qr-wifi-rs-VERSION-PLATFORM.tar.gz`: desktop app + CLI + TUI,
   with `install.sh` and `install.ps1` for one-command per-user installation.
   Linux binaries are built on Ubuntu 24.04, then installed and launched in an
   Arch Linux container before publication. Windows runs the installer under
   PowerShell 5.1 and starts the installed desktop app. macOS installs the app bundle.
-- `qr-wifi-rs-browser-extension-0.2.2-unsigned.zip`
 - `qr-wifi-rs-0.2.2-SHA256SUMS.txt`
 
 A manual tag push still works, but the release script is the supported path

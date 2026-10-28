@@ -137,4 +137,20 @@ mod tests {
         ));
         assert!(!is_trusted_loopback_origin("https://evil.example/", origin));
     }
+
+    #[test]
+    fn denies_camera_access_for_scheme_host_and_userinfo_lookalikes() {
+        let origin = "http://localhost:41234";
+        for uri in [
+            "https://localhost:41234/",
+            "http://127.0.0.1:41234/",
+            "http://localhost:41234.evil.example/",
+            "http://localhost:41234@evil.example/",
+            "http://localhost:41234?next=/",
+            "http://localhost:41234#local/",
+            "",
+        ] {
+            assert!(!is_trusted_loopback_origin(uri, origin), "{uri}");
+        }
+    }
 }

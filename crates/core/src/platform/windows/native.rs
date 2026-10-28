@@ -3,12 +3,13 @@
 
 use std::ffi::c_void;
 use std::ptr::{null, null_mut};
+use std::time::Duration;
 
 use windows_sys::core::GUID;
 use windows_sys::Win32::Foundation::{ERROR_ACCESS_DENIED, ERROR_INVALID_STATE, HANDLE};
 use windows_sys::Win32::NetworkManagement::WiFi::*;
 
-use super::{parse_profile, profile_xml, WindowsProfile};
+use super::{parse_profile, profile_xml, ConnectionCompletion, WindowsProfile};
 use crate::error::{CoreError, Result};
 use crate::types::{sort_networks, WifiCredentials, WifiNetwork, WifiSecurity};
 
@@ -99,6 +100,120 @@ struct SavedProfile {
     interface: GUID,
     profile: WindowsProfile,
     flags: u32,
+}
+
+struct ConnectionNotice {
+    interface: GUID,
+    ssid: Vec<u8>,
+    completion: ConnectionCompletion,
+}
+
+// The heap address stays stable until notification unregistration has waited
+// for every in-flight callback. Never hold the completion lock in Drop.
+struct ConnectionNotifications<'a> {
+    session: &'a Session,
+    context: Option<Box<ConnectionNotice>>,
+}
+
+unsafe extern "system" fn connection_notice(data: *mut L2_NOTIFICATION_DATA, context: *mut c_void) {
+    if data.is_null() || context.is_null() {
+        return;
+    }
+    // SAFETY: WLAN owns data during the call; registration owns context until
+    // unregistration returns, which waits for pending callbacks to finish.
+    let data = unsafe { &*data };
+    let context = unsafe { &*context.cast::<ConnectionNotice>() };
+    let a = &data.InterfaceGuid;
+    let b = &context.interface;
+    if data.NotificationSource != WLAN_NOTIFICATION_SOURCE_ACM
+        || data.NotificationCode != wlan_notification_acm_connection_complete as u32
+        || (a.data1, a.data2, a.data3, a.data4) != (b.data1, b.data2, b.data3, b.data4)
+        || data.pData.is_null()
+        || (data.dwDataSize as usize) < std::mem::size_of::<WLAN_CONNECTION_NOTIFICATION_DATA>()
+    {
+        return;
+    }
+    // SAFETY: The source, event and minimum allocation size were checked above.
+    let details = unsafe { &*data.pData.cast::<WLAN_CONNECTION_NOTIFICATION_DATA>() };
+    let length = details.dot11Ssid.uSSIDLength as usize;
+    if details.dot11Ssid.ucSSID.get(..length) != Some(context.ssid.as_slice()) {
+        return;
+    }
+    context.completion.finish(details.wlanReasonCode);
+}
+
+impl<'a> ConnectionNotifications<'a> {
+    fn register(session: &'a Session, interface: GUID, ssid: &str) -> Result<Self> {
+        let context = Box::new(ConnectionNotice {
+            interface,
+            ssid: ssid.as_bytes().to_vec(),
+            completion: ConnectionCompletion::default(),
+        });
+        // SAFETY: Box keeps the callback context at a stable address for the
+        // registration's lifetime. Only ACM connection notifications are used.
+        check(
+            unsafe {
+                WlanRegisterNotification(
+                    session.0,
+                    WLAN_NOTIFICATION_SOURCE_ACM,
+                    0,
+                    Some(connection_notice),
+                    (&*context as *const ConnectionNotice).cast(),
+                    null(),
+                    null_mut(),
+                )
+            },
+            "observe Wi-Fi connection completion",
+        )?;
+        Ok(Self {
+            session,
+            context: Some(context),
+        })
+    }
+
+    fn wait(&self) -> Result<()> {
+        self.context
+            .as_ref()
+            .expect("registered context")
+            .completion
+            .wait(Duration::from_secs(45))
+    }
+
+    fn timed_out(&self) -> bool {
+        self.context.as_ref().is_some_and(|context| {
+            context
+                .completion
+                .reason
+                .lock()
+                .map(|value| value.is_none())
+                .unwrap_or(true)
+        })
+    }
+}
+
+impl Drop for ConnectionNotifications<'_> {
+    fn drop(&mut self) {
+        // SAFETY: Called outside the callback and without its mutex held.
+        let code = unsafe {
+            WlanRegisterNotification(
+                self.session.0,
+                WLAN_NOTIFICATION_SOURCE_NONE,
+                0,
+                None,
+                null(),
+                null(),
+                null_mut(),
+            )
+        };
+        if code != 0 {
+            // A failed OS unregistration cannot prove that callbacks stopped.
+            // Retain this small allocation until process exit rather than free
+            // a context the OS might still reference. The session closes next.
+            if let Some(context) = self.context.take() {
+                Box::leak(context);
+            }
+        }
+    }
 }
 
 impl Session {
@@ -364,18 +479,58 @@ impl Session {
             dot11BssType: dot11_BSS_type_infrastructure,
             ..Default::default()
         };
+        let notifications = ConnectionNotifications::register(self, interface, &credentials.ssid)?;
         // SAFETY: The interface and profile name are valid for the duration of
-        // the call. Like netsh wlan connect, this requests asynchronous joining.
+        // the call. Acceptance is asynchronous; success comes from the callback.
         check(
             unsafe { WlanConnect(self.0, &interface, &parameters, null()) },
             "connect to the Wi-Fi network",
-        )
+        )?;
+        let result = notifications.wait();
+        if result.is_err() && notifications.timed_out() {
+            // Prevent a timed-out request from switching networks later, after
+            // the frontend has already reported failure.
+            unsafe { WlanDisconnect(self.0, &interface, null()) };
+        }
+        result
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn completion_callback_ignores_other_interfaces_and_ssids() {
+        let context = ConnectionNotice {
+            interface: GUID::from_u128(1),
+            ssid: b"Fixture".to_vec(),
+            completion: ConnectionCompletion::default(),
+        };
+        let mut details = WLAN_CONNECTION_NOTIFICATION_DATA::default();
+        details.dot11Ssid.uSSIDLength = 7;
+        details.dot11Ssid.ucSSID[..7].copy_from_slice(b"Fixture");
+        let mut notice = L2_NOTIFICATION_DATA {
+            NotificationSource: WLAN_NOTIFICATION_SOURCE_ACM,
+            NotificationCode: wlan_notification_acm_connection_complete as u32,
+            InterfaceGuid: GUID::from_u128(2),
+            dwDataSize: std::mem::size_of_val(&details) as u32,
+            pData: (&mut details as *mut WLAN_CONNECTION_NOTIFICATION_DATA).cast(),
+        };
+        let pointer = (&context as *const ConnectionNotice).cast_mut().cast();
+        // SAFETY: Both pointers refer to live test allocations of the checked types.
+        unsafe { connection_notice(&mut notice, pointer) };
+        assert!(context.completion.wait(Duration::ZERO).is_err());
+        notice.InterfaceGuid = context.interface;
+        details.dot11Ssid.uSSIDLength = 33;
+        notice.pData = std::ptr::from_mut(&mut details).cast();
+        unsafe { connection_notice(&mut notice, pointer) };
+        assert!(context.completion.wait(Duration::ZERO).is_err());
+        details.dot11Ssid.uSSIDLength = 7;
+        notice.pData = std::ptr::from_mut(&mut details).cast();
+        unsafe { connection_notice(&mut notice, pointer) };
+        assert!(context.completion.wait(Duration::ZERO).is_ok());
+    }
 
     #[test]
     fn native_ssids_preserve_unicode_spaces_and_punctuation() {

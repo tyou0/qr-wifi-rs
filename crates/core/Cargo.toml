@@ -1,6 +1,6 @@
 [package]
 name = "qr-wifi-core"
-description = "Cross-platform core for QR Wi-Fi: OS-level Wi-Fi adapters, QR build/decode, and the IPC protocol shared by the CLI/TUI/GUI and the browser-extension host."
+description = "Cross-platform core for QR Wi-Fi: OS-level Wi-Fi adapters and QR build/decode shared by the CLI/TUI/GUI."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,7 +8,7 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 readme = "../../README.md"
-keywords = ["wifi", "qr-code", "network", "cross-platform", "ipc"]
+keywords = ["wifi", "qr-code", "network", "cross-platform"]
 categories = ["network-programming", "os", "encoding"]
 
 [dependencies]
@@ -21,6 +21,16 @@ base64 = { workspace = true }
 rqrr = { workspace = true }
 rxing = { workspace = true }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-core-location = { version = "0.3", default-features = false, features = ["std", "CLLocationManager"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData", "NSError", "NSString", "NSSet", "NSEnumerator", "NSDictionary"] }
+objc2-core-wlan = { version = "0.3", default-features = false, features = ["std", "CWChannel", "CWInterface", "CWNetwork", "CWWiFiClient", "CoreWLANTypes", "CoreWLANUtil"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Use the stable service API rather than spawning or parsing a distro CLI.
+zbus = "=5.19.0"
+
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_NetworkManagement_WiFi", "Win32_NetworkManagement_Ndis"] }
 quick-xml = { version = "0.41", features = ["serialize"] }
@@ -29,3 +39,4 @@ quick-xml = { version = "0.41", features = ["serialize"] }
 # Pure-logic unit tests live inside each module; no extra dev-deps required.
 serde_json = { workspace = true }
 quick-xml = { version = "0.41", features = ["serialize"] }
+zbus = "=5.19.0"

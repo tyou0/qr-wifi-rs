@@ -15,7 +15,7 @@ package="qr-wifi-rs-${version}-${platform}"
 staging=$(mktemp -d)
 trap 'rm -rf "$staging"' EXIT
 mkdir -p "$staging/$package/bin" dist
-for name in qr-wifi qr-wifi-tui qr-wifi-host qr-wifi-gui; do
+for name in qr-wifi qr-wifi-tui qr-wifi-gui; do
   cp "$build_dir/$name$suffix" "$staging/$package/bin/"
 done
 if [[ "$platform" == macos-* ]]; then

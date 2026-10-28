@@ -27,7 +27,7 @@ pub enum CoreError {
     #[error("QR decode failed: {0}")]
     QrDecode(String),
 
-    /// A spawned OS command (`networksetup`, `nmcli`, `netsh`, ...) failed.
+    /// A spawned OS command (for example macOS `networksetup`) failed.
     #[error("OS command failed ({command}): {message}")]
     Command {
         /// The program + arguments that were invoked, for diagnostics.
@@ -48,7 +48,11 @@ pub enum CoreError {
     #[error("Network not found: {0}")]
     NetworkNotFound(String),
 
-    /// Wraps [`std::io::Error`] (file/network/native-messaging I/O).
+    /// The decoded network is absent from a fresh scan of the available radios.
+    #[error("Wi-Fi network '{0}' is not visible. Move within range of that router, enable Wi-Fi, and try again. A QR code supplies credentials; the access point must be nearby.")]
+    NetworkUnavailable(String),
+
+    /// Wraps [`std::io::Error`] (file/network I/O).
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 

@@ -13,14 +13,11 @@ class QrWifiRs < Formula
     system "cargo", "build", "--release", "--locked",
            "-p", "qr-wifi-cli",
            "-p", "qr-wifi-tui",
-           "-p", "qr-wifi-host",
            "-p", "qr-wifi-gui",
            "--features", "qr-wifi-gui/custom-protocol"
 
     bin.install "target/release/qr-wifi"
     bin.install "target/release/qr-wifi-tui"
-    bin.install "target/release/qr-wifi-host"
-    bin.install "scripts/install-native-host.sh" => "qr-wifi-install-native-host"
 
     app_bundle = prefix/"QR Wi-Fi RS.app"
     (app_bundle/"Contents/MacOS").install "target/release/qr-wifi-gui"
@@ -49,29 +46,18 @@ class QrWifiRs < Formula
       Installed binaries:
         qr-wifi
         qr-wifi-tui
-        qr-wifi-host
         qr-wifi-gui
 
       Desktop application:
         open "#{opt_prefix}/QR Wi-Fi RS.app"
 
-      To register the browser Native Messaging host after installing the
-      Chrome/Firefox extension:
-
-        qr-wifi-install-native-host --skip-build --host-path "#{opt_bin}/qr-wifi-host" --chrome-extension-id <EXTENSION_ID>
-
-      Firefox does not require a Chrome extension ID:
-
-        qr-wifi-install-native-host --skip-build --host-path "#{opt_bin}/qr-wifi-host"
     EOS
   end
 
   test do
     assert_match "Usage", shell_output("#{bin}/qr-wifi --help")
     assert_predicate bin/"qr-wifi-tui", :executable?
-    assert_predicate bin/"qr-wifi-host", :executable?
     assert_predicate bin/"qr-wifi-gui", :executable?
-    assert_predicate bin/"qr-wifi-install-native-host", :executable?
     assert_predicate prefix/"QR Wi-Fi RS.app/Contents/MacOS/qr-wifi-gui", :executable?
   end
 end

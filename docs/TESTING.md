@@ -28,6 +28,16 @@ We solve these with:
 2. **Fake adapter** for integration testing (in-memory implementation)
 3. **Pure logic tests** for payload, QR encoding, etc.
 
+### macOS hardware verification
+
+On 2026-10-28, the desktop app was verified on an Apple silicon Mac running
+macOS 26.6. The user scanned a physical Wi-Fi QR code with the camera and
+confirmed a successful connection after allowing Location Services and
+restarting the app. An earlier CoreWLAN scan error stopped occurring after the
+restart; its cause was not established. Automated tests cover security mapping
+and the required camera and Location Services bundle metadata, but they do not
+replace a real camera and Wi-Fi connection test.
+
 ---
 
 ## Running Tests
@@ -355,12 +365,6 @@ fn full_round_trip() {
 - Test output parsing with captured command output
 - Test error handling for malformed output
 - (Don't test actual OS commands)
-
-### `ipc.rs`
-
-- Test request/response serialization
-- Test message framing (length prefix)
-- Test error responses
 
 ### `tui/fuzzy.rs`
 

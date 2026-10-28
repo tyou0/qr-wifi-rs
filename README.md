@@ -7,12 +7,10 @@ This is the Rust counterpart to [`qr_wifi_bun`](../qr_wifi_bun). The two
 projects are fully separated:
 
 - `qr_wifi_bun` — Bun/TypeScript CLI, TUI, and Electron desktop app.
-- `qr_wifi_rs` — Rust workspace (this project): CLI, TUI, Tauri desktop GUI,
-  and a browser-extension Native Messaging host.
+- `qr_wifi_rs` — Rust workspace (this project): CLI, TUI, and Tauri desktop GUI.
 
-Everything that touches the OS (`networksetup`, `nmcli`, Windows Native Wi-Fi) is written in
-Rust. The only non-Rust pieces are the Tauri webview frontend (vanilla
-HTML/CSS/JS, no TypeScript, no bundler) and the browser extension.
+Everything that touches the OS (CoreWLAN, NetworkManager D-Bus, Windows Native Wi-Fi) is written in
+Rust. The Tauri webview frontend uses vanilla HTML/CSS/JS with no TypeScript or bundler.
 
 ## Layout
 
@@ -20,16 +18,14 @@ HTML/CSS/JS, no TypeScript, no bundler) and the browser extension.
 qr_wifi_rs/
 ├── crates/
 │   ├── core/      qr-wifi-core  shared lib: domain types, WIFI: payload, QR
-│   │                            encode/decode, OS Wi-Fi adapters, IPC protocol
+│   │                            encode/decode, OS Wi-Fi adapters
 │   ├── cli/       qr-wifi       command-line interface
-│   ├── tui/       qr-wifi-tui   terminal UI (ratatui)
-│   └── host/      qr-wifi-host  Native Messaging host (Chrome/Firefox IPC)
+│   └── tui/       qr-wifi-tui   terminal UI (ratatui)
 ├── src-tauri/     qr-wifi-gui   Tauri desktop GUI (thin commands over core)
-├── frontend/      vanilla HTML/CSS/JS for the Tauri webview
-└── extension/     Chrome/Firefox extension that talks to the host
+└── frontend/      vanilla HTML/CSS/JS for the Tauri webview
 ```
 
-All three binaries (CLI, TUI, host) and the Tauri GUI share one implementation
+All three frontends (CLI, TUI, and Tauri GUI) share one implementation
 through `qr-wifi-core`.
 
 ## Learn Rust with this repo
@@ -50,7 +46,7 @@ cargo run -p qr-wifi-core --example service_contract
 ```
 
 The learning rule for this repo: add behavior to `qr-wifi-core` first, test it
-there, then expose it through CLI, TUI, GUI, and browser extension as thin
+there, then expose it through CLI, TUI, and GUI as thin
 frontends.
 
 ## Prerequisites
@@ -59,16 +55,16 @@ frontends.
   Confirm with `cargo --version`.
 - **Tauri CLI** (only for the desktop GUI): `cargo install tauri-cli --version "^2"`.
 - OS Wi-Fi tooling:
-  `networksetup`/`ipconfig`/`security` (macOS), `nmcli` (Linux, NetworkManager),
+  CoreWLAN (macOS), NetworkManager D-Bus (Linux),
   Windows WLAN AutoConfig / Native Wi-Fi (built into Windows).
 
 ## Install
 
 ### Desktop + CLI + TUI together
 
-The combined installer installs **all four** programs: the desktop app,
-`qr-wifi` (CLI), `qr-wifi-tui`, and `qr-wifi-host`. It creates a desktop launcher
-and installs per user, without `sudo`. Close the app before upgrading.
+The combined installer installs the desktop app, `qr-wifi` (CLI), and
+`qr-wifi-tui`. It creates a desktop launcher and installs per user, without
+`sudo`. Close the app before upgrading.
 
 From a source checkout, install the prerequisites below, then run **one** command
 from the repository root (the script also installs Tauri CLI if missing):
@@ -164,13 +160,6 @@ Wi-Fi detection/listing on recent Windows versions may require **Location
 services** and **desktop-app location access** in Settings > Privacy & security
 > Location. Saved passwords remain subject to Windows policy and user permissions.
 
-Browser extension registration remains an optional separate step. For the
-combined macOS/Linux installation:
-
-```sh
-scripts/install-native-host.sh --skip-build --host-path "$HOME/.local/bin/qr-wifi-host" --chrome-extension-id <chrome-extension-id>
-```
-
 ### Homebrew
 
 The formula is published in the free `tyou0/qr-wifi-rs` personal tap:
@@ -183,7 +172,7 @@ brew install qr-wifi-rs
 
 The trust step is required before Homebrew will use this personal tap. A normal
 `brew install qr-wifi-rs` builds and installs the macOS desktop application as
-well as the terminal and Native Messaging tools.
+well as the terminal tools.
 
 For latest `main` instead of the pinned release:
 
@@ -195,8 +184,6 @@ This installs:
 
 - `qr-wifi`
 - `qr-wifi-tui`
-- `qr-wifi-host`
-- `qr-wifi-install-native-host`
 - `qr-wifi-gui`
 - `QR Wi-Fi RS.app` under the formula prefix; launch it with:
 
@@ -204,30 +191,17 @@ This installs:
   open "$(brew --prefix qr-wifi-rs)/QR Wi-Fi RS.app"
   ```
 
-Register the browser Native Messaging host after installing the browser
-extension:
-
-```sh
-qr-wifi-install-native-host --skip-build --host-path "$(brew --prefix qr-wifi-rs)/bin/qr-wifi-host" --chrome-extension-id <chrome-extension-id>
-```
-
-Firefox can omit the Chrome extension ID:
-
-```sh
-qr-wifi-install-native-host --skip-build --host-path "$(brew --prefix qr-wifi-rs)/bin/qr-wifi-host"
-```
-
 The tap formula builds the pinned `v0.2.4` public GitHub source archive. Nothing is submitted
 to Homebrew core or an app store.
 
 ## Build
 
-`crates/core`, `crates/cli`, `crates/tui`, and `crates/host` are the workspace
+`crates/core`, `crates/cli`, and `crates/tui` are the workspace
 default members, so plain `cargo` commands build/test them. The Tauri GUI
 (`src-tauri`) is a separate member that pulls the larger Tauri dependency tree.
 
 ```sh
-# Debug build of CLI + TUI + host (and the shared core)
+# Debug build of CLI + TUI (and the shared core)
 cargo build
 
 # Optimized release build
@@ -236,7 +210,6 @@ cargo build --release
 # Build just one crate
 cargo build -p qr-wifi-cli
 cargo build -p qr-wifi-tui
-cargo build -p qr-wifi-host
 cargo build -p qr-wifi-core      # library only
 
 # Compile-check the Tauri GUI (full bundle is done via the Tauri CLI below)
@@ -250,7 +223,6 @@ Build artifacts land in `target/debug/` (or `target/release/`):
 | ----------------- | ------------ | -------------------------------- |
 | `qr-wifi`         | `qr-wifi-cli`  | Command-line interface          |
 | `qr-wifi-tui`     | `qr-wifi-tui`  | Terminal UI                     |
-| `qr-wifi-host`    | `qr-wifi-host` | Browser Native Messaging host   |
 | `qr-wifi-gui`     | `qr-wifi-gui`  | Tauri desktop app (run via Tauri CLI) |
 
 Same commands, repeated for copy/paste:
@@ -258,7 +230,6 @@ Same commands, repeated for copy/paste:
 ```sh
 cargo install --path crates/cli
 cargo install --path crates/tui
-cargo install --path crates/host
 ```
 
 ## Test & lint
@@ -281,7 +252,7 @@ CI/CD is configured in:
 ### One-command release for every platform
 
 From a clean `main` checkout on Podman, this single command bumps the coordinated
-Cargo, Tauri, and browser-extension versions, runs release gates, commits, tags,
+Cargo and Tauri versions, runs release gates, commits, tags,
 and pushes to canonical Gitea:
 
 ```sh
@@ -292,11 +263,10 @@ Gitea's sync-on-commit push mirror sends `main` and the new tag to GitHub. The
 tag starts GitHub Actions, which publishes one GitHub Release with uniquely
 named packages (version + OS + architecture, so synced artifacts never collide):
 
-- Linux x86_64: CLI/TUI/host `.tar.gz`; desktop `.AppImage`, `.deb`, `.rpm`
-- Windows x86_64: CLI/TUI/host `.tar.gz`; desktop NSIS `-setup.exe`, `.msi`
-- macOS ARM64: CLI/TUI/host `.tar.gz`; desktop `.app.zip`, `.dmg`
-- macOS Intel x86_64: CLI/TUI/host `.tar.gz`; desktop `.app.zip`, `.dmg`
-- Browser extension: versioned unsigned `.zip`
+- Linux x86_64: CLI/TUI `.tar.gz`; desktop `.AppImage`, `.deb`, `.rpm`
+- Windows x86_64: CLI/TUI `.tar.gz`; desktop NSIS `-setup.exe`, `.msi`
+- macOS ARM64: CLI/TUI `.tar.gz`; desktop `.app.zip`, `.dmg`
+- macOS Intel x86_64: CLI/TUI `.tar.gz`; desktop `.app.zip`, `.dmg`
 - Release integrity: versioned `SHA256SUMS.txt`
 
 Example desktop filename:
@@ -311,7 +281,7 @@ It asks before publishing. Use a new semantic version for each release.
 See [`docs/CI_CD.md`](docs/CI_CD.md) for the concise operator runbook. See
 [`docs/DEPLOYMENT_GUIDE.md`](docs/DEPLOYMENT_GUIDE.md) for the teaching-oriented
 architecture, current automation status, trust boundaries, store publication
-blueprints (Chrome, Firefox, Homebrew, WinGet, Microsoft Store, Apple, and Linux),
+blueprints (Homebrew, WinGet, Microsoft Store, Apple, and Linux),
 verification gates, and rollback procedures.
 
 ## Run
@@ -332,7 +302,6 @@ cargo run -p qr-wifi-cli -- --share
 cargo run -p qr-wifi-cli -- --ssid "Home"
 cargo run -p qr-wifi-cli                    # no flags → interactive menu
 cargo run -p qr-wifi-tui                    # interactive menu directly
-cargo run -p qr-wifi-host                   # reads Native Messaging frames on stdin
 
 # 4. Installed on PATH (after `cargo install`)
 qr-wifi --list
@@ -435,105 +404,88 @@ The GUI has Share / Custom / Connect tabs. Camera scanning is decoded in Rust
 (`decode_qr` command) so no JS QR library is needed. Generated QR codes show
 the image and the raw `WIFI:` payload string at the bottom.
 
-### Linux camera prerequisites
+### Linux camera prerequisites (including Omarchy)
 
 The Linux desktop bundle enables WebKitGTK media streams and grants camera
-capture only to its own per-process loopback UI origin. On Arch, install the
-WebKit/GStreamer camera stack before launching the app:
+capture only to its own per-process loopback UI origin. Scanning requests video
+only, with no microphone. On Arch/Omarchy, install the WebKit/GStreamer camera
+stack before launching the app:
 
 ```sh
-sudo pacman -S webkit2gtk-4.1 gst-plugins-good gst-plugin-pipewire
+sudo pacman -Syu --needed webkit2gtk-4.1 gst-plugins-good gst-plugin-pipewire
 ```
 
-Also ensure that the desktop session has permission to use the camera (for
-example through PipeWire/xDG Desktop Portal). Windows still honors the global
-Settings > Privacy and security > Camera desktop-app switch.
+Omarchy's [base package list](https://github.com/basecamp/omarchy/blob/master/install/omarchy-base.packages)
+includes WirePlumber and the GTK/Hyprland portals, but does not explicitly list
+these GStreamer camera plugins. A working Chromium camera does not establish
+that the Tauri app's WebKitGTK/GStreamer capture stack is installed.
 
-## Browser extension (Native Messaging)
-
-The extension shares/connects to Wi-Fi by talking to the `qr-wifi-host` binary
-over [Native Messaging](https://developer.chrome.com/docs/apps/nativeMessaging).
-The popup exposes the same feature set as the other frontends: share current
-connection, share a different SSID, create a custom QR, connect from a pasted
-`WIFI:` payload, or connect from a QR image file.
-
-Fast macOS/Linux setup:
+For a camera that does not appear or start, check from a terminal inside the
+logged-in Omarchy desktop session:
 
 ```sh
-# Chrome/Chromium: load extension/ first, copy its extension ID, then:
-scripts/install-native-host.sh --chrome-extension-id <chrome-extension-id>
-
-# Firefox only works without the Chrome ID because manifest.json fixes the add-on ID.
-scripts/install-native-host.sh
+systemctl --user is-active pipewire wireplumber xdg-desktop-portal
+gst-inspect-1.0 video4linux2
+gst-inspect-1.0 pipewire
+gst-device-monitor-1.0 Video/Source
 ```
 
-Manual setup:
+`gst-inspect-1.0` comes from `gstreamer`; `gst-device-monitor-1.0` comes from
+`gst-plugins-base-libs` on Arch. The
+[gst-plugins-good package](https://archlinux.org/packages/extra/x86_64/gst-plugins-good/files/)
+provides the Video4Linux camera plugin, and
+[gst-plugin-pipewire](https://archlinux.org/packages/extra/x86_64/gst-plugin-pipewire/)
+provides the PipeWire integration. Cameras needing libcamera may additionally
+require `pipewire-libcamera` and a supported kernel/driver; installing webview
+plugins alone cannot add hardware support.
 
-1. Build the host and put it somewhere stable:
+Close other camera apps before retrying. A `NotReadableError` can indicate a
+busy device, a driver problem, or a capture-backend failure. Restart QR Wi-Fi RS
+after installing plugins. Camera access and preview startup each time out after
+20 seconds rather than leaving the app silently waiting. A late camera stream
+is immediately stopped after an access timeout. The console distinguishes
+**Camera access timed out** from **Camera preview timed out**.
 
-   ```sh
-   cargo build --release -p qr-wifi-host
-   cp target/release/qr-wifi-host /usr/local/bin/qr-wifi-host
-   ```
+For a built-in laptop camera, first check whether another camera app can use it
+and note the laptop model. Some built-in sensors need a libcamera-compatible
+driver stack; USB webcam results alone do not establish built-in camera support.
 
-2. Register it with your browser by copying
-   `extension/com.thetomyou.qrwifi.json.template` to the right directory (edit
-   `path` and the Chrome extension ID first):
+Use **Connect > Start Scanning**, scan a Wi-Fi QR, then
+press **Stop Scanning** and verify that the camera indicator turns off. On systems with
+multiple cameras, the app currently uses the webview's chosen camera; it has no
+camera selector.
 
-   - **Chrome (macOS):** `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.thetomyou.qrwifi.json`
-   - **Firefox (macOS):** `~/Library/Application Support/Mozilla/NativeMessagingHosts/com.thetomyou.qrwifi.json`
-   - **Linux:** `~/.config/google-chrome/NativeMessagingHosts/` (Chrome) /
-     `~/.mozilla/native-messaging-hosts/` (Firefox)
-   - **Windows:** registry key
-     `HKCU\Software\Google\Chrome\NativeMessagingHosts\com.thetomyou.qrwifi`
+The Arch release check starts the GUI under Xvfb; it does not exercise a physical
+camera, a Hyprland session, or Omarchy's portal permissions. Camera compatibility
+still needs this on-device check. Windows honors the global Settings > Privacy
+and security > Camera desktop-app switch.
 
-3. Load `extension/` as an unpacked extension (Chrome) or temporary add-on
-   (Firefox).
+## macOS Wi-Fi permissions
 
-### IPC protocol
+The macOS desktop app requires macOS 11 or later. Its adapter uses Apple's CoreWLAN framework directly. The desktop app
+requests Location Services permission because macOS protects Wi-Fi network names.
+Enable it under System Settings > Privacy & Security > Location Services if
+access was denied. Terminal builds need authorization for their terminal app.
+No location coordinates are collected. Camera scanning requires camera permission.
 
-The host speaks a tiny JSON protocol (length-prefixed per the Native Messaging
-spec). Requests are tagged by `command`:
-
-| command           | input                                  | response data                |
-| ----------------- | -------------------------------------- | ---------------------------- |
-| `current_ssid`    | —                                      | `{ ssid }`                   |
-| `list_networks`   | —                                      | `{ networks: [...] }`        |
-| `get_credentials` | `{ ssid }`                             | `{ credentials }`            |
-| `share_current`   | —                                      | `{ payload, png_base64 }`    |
-| `share_custom`    | `{ credentials }`                      | `{ payload, png_base64 }`    |
-| `connect`         | `{ credentials }`                      | `{ kind: "connected" }`      |
-| `connect_payload` | `{ payload }`                          | `{ kind: "connected" }`      |
-| `decode_qr`       | `{ image_base64 }`                     | `{ credentials }`            |
-
-Responses use the envelope `{ ok: true, data }` or `{ ok: false, error }`.
-
-## Current SSID detection (macOS)
-
-Active SSID detection mirrors the Bun adapter, trying several methods in order
-and falling back to the syslog when the OS redacts the name:
-
-1. `networksetup -getairportnetwork <device>` (primary)
-2. `ipconfig getsummary <device>`
-3. `swift` CoreWLAN snippet (live SSID, then first saved profile)
-4. `system_profiler SPAirPortDataType -json`
-5. `log show` for the latest `airportd` `NetworkName` when a step returns
-   `<redacted>`
-
-The Wi-Fi interface is resolved from `networksetup -listallhardwareports`,
-defaulting to `en0`.
+Current-network detection reads the live interface, never a saved profile or
+historical log. Connections use a directed scan, check the requested security,
+associate through CoreWLAN, then verify the live SSID before reporting success.
+Passwords stay in memory and are never passed through command arguments.
 
 ## Platform support
 
 | OS      | Detect SSID              | List networks                        | Read password                    | Connect                          |
 | ------- | ------------------------ | ------------------------------------ | -------------------------------- | -------------------------------- |
-| macOS   | networksetup/ipconfig/…  | `networksetup -listpreferred…`       | Keychain `security`              | `networksetup -setairportnetwork`|
-| Linux   | `nmcli`                  | `nmcli device wifi`                  | `nmcli -s connection show`       | `nmcli device wifi connect`      |
+| macOS | CoreWLAN live interface | CoreWLAN scan | CoreWLAN Keychain API | CoreWLAN association + verification |
+| Linux   | NetworkManager D-Bus    | NetworkManager access-point objects | NetworkManager settings/secrets | NetworkManager activation API    |
 | Windows | Native Wi-Fi query       | Native Wi-Fi available-network list | Native Wi-Fi profile XML        | Native Wi-Fi profile + connect   |
 
 Linux requires NetworkManager managing the wireless interface. Saved profiles
-are resolved by SSID and UUID, including renamed profiles; escaped colons,
-backslashes, Unicode names, and hidden networks are supported. Windows uses
+are resolved by their SSID bytes, including renamed profiles; punctuation,
+Unicode names, and hidden networks are supported. No `nmcli` executable or
+localized command output is used. A missing SSID triggers a directed scan,
+and the adapter waits for scan completion before reporting it unavailable. Windows uses
 structured Native Wi-Fi data instead of localized `netsh` output. Personal
 WPA/WPA2/WPA3, WEP, and open profiles retain their security and hidden settings;
 enterprise authentication cannot be represented by this toolkit's personal Wi-Fi QR model.
@@ -542,8 +494,10 @@ enterprise authentication cannot be represented by this toolkit's personal Wi-Fi
 changing Wi-Fi settings. CI builds, tests, and lints the complete workspace on
 Linux, Windows, and both Mac architectures, and tests the declared Rust 1.88
 minimum separately. Real Wi-Fi association and camera capture still require
-hardware checks on each OS. Windows connection success means the OS accepted
-the connection request; association completes asynchronously.
+hardware checks on each OS. Both Linux and Windows wait for actual OS connection
+completion before reporting success. Windows uses Native Wi-Fi completion
+notifications; Linux checks the activated connection and its actual SSID.
+Public Wi-Fi may still require its browser sign-in page after joining.
 
 ## License
 

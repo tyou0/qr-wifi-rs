@@ -1,18 +1,14 @@
 //! Platform Wi-Fi adapters.
 //!
 //! Each operating system has its own module implementing [`WifiAdapter`]. The
-//! macOS and Linux adapters shell out to native tooling
-//! (`networksetup`/`ipconfig`, `nmcli`). Windows uses the Native Wi-Fi API so
-//! network names and credentials do not depend on localized command output.
+//! macOS uses CoreWLAN. Linux uses NetworkManager's D-Bus API;
+//! Windows uses the Native Wi-Fi API. Neither parses localized CLI output.
 
-#[cfg(any(test, target_os = "linux", target_os = "macos"))]
-mod command;
 // Exercise every adapter's parsing and command construction on every test host.
 #[cfg(any(test, target_os = "linux"))]
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod linux;
-#[cfg(any(test, target_os = "macos"))]
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[cfg(target_os = "macos")]
 mod macos;
 #[cfg(any(test, target_os = "windows"))]
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
@@ -21,14 +17,7 @@ mod windows;
 use crate::error::Result;
 use crate::types::{WifiCredentials, WifiNetwork};
 
-#[cfg(any(test, target_os = "linux", target_os = "macos"))]
-pub(crate) use command::run;
-#[cfg(any(test, target_os = "linux", target_os = "macos"))]
-pub(crate) use command::run_redacted;
-#[cfg(any(test, target_os = "macos"))]
-pub(crate) use command::try_capture;
-
-/// OS-level Wi-Fi operations used by every frontend (CLI/TUI/GUI/IPC).
+/// OS-level Wi-Fi operations used by every frontend (CLI/TUI/GUI).
 pub trait WifiAdapter: Send + Sync {
     /// List known/visible networks, marking the active one.
     fn list_networks(&self) -> Result<Vec<WifiNetwork>>;

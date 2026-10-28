@@ -20,7 +20,7 @@ while [[ $# -gt 0 ]]; do
       shift 2 ;;
     -h|--help)
       printf '%s\n' 'Usage: bash scripts/install.sh [--prefix DIR] [--applications-dir DIR] [--prebuilt DIR]' \
-        'Build and install desktop + CLI + TUI + native host on macOS or Linux.' \
+        'Build and install desktop + CLI + TUI on macOS or Linux.' \
         'From a combined release archive, run: bash install.sh (no Rust needed).' \
         'Default: ~/.local/bin, ~/.local/share/applications (Linux), ~/Applications (macOS).'
       exit 0 ;;
@@ -62,7 +62,7 @@ else
   [[ -n "$host" ]] || die 'Cannot determine the native Rust target.'
   export CARGO_TARGET_DIR="$repo/target"
   cargo tauri --version >/dev/null 2>&1 || cargo install tauri-cli --locked --version 2.11.4
-  cargo build --release --locked --target "$host" -p qr-wifi-cli -p qr-wifi-tui -p qr-wifi-host
+  cargo build --release --locked --target "$host" -p qr-wifi-cli -p qr-wifi-tui
   if [[ "$os" == macos ]]; then
     cargo tauri build --ci --target "$host" --bundles app -- --locked
   else
@@ -74,7 +74,7 @@ else
 fi
 
 # Validate the complete payload before changing the installation.
-for name in qr-wifi qr-wifi-tui qr-wifi-host qr-wifi-gui; do
+for name in qr-wifi qr-wifi-tui qr-wifi-gui; do
   [[ -x "$binaries/$name" ]] || die "Missing executable: $binaries/$name"
 done
 if [[ "$os" == macos ]]; then
@@ -84,7 +84,7 @@ else
 fi
 
 mkdir -p "$prefix/bin"
-for name in qr-wifi qr-wifi-tui qr-wifi-host qr-wifi-gui; do
+for name in qr-wifi qr-wifi-tui qr-wifi-gui; do
   install -m 755 "$binaries/$name" "$prefix/bin/$name"
 done
 if [[ "$os" == macos ]]; then
@@ -105,9 +105,9 @@ else
     update-desktop-database "$data_dir/applications"
   fi
   printf 'Desktop launcher: %s/applications/com.thetomyou.qrwifirs.desktop\n' "$data_dir"
-  command -v nmcli >/dev/null || printf '%s\n' 'Wi-Fi access requires NetworkManager (nmcli). See README prerequisites.'
+  printf '%s\n' 'Linux Wi-Fi requires NetworkManager managing the wireless interface (system D-Bus). See README prerequisites.'
 fi
-printf 'Installed desktop, CLI, TUI, and native host. Commands: %s/bin\n' "$prefix"
+printf 'Installed desktop, CLI, TUI. Commands: %s/bin\n' "$prefix"
 case ":$PATH:" in
   *":$prefix/bin:"*) ;;
   *) printf 'Add to your shell profile: export PATH=%q:"$PATH"\n' "$prefix/bin" ;;

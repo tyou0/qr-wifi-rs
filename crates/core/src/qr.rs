@@ -21,7 +21,7 @@ use crate::types::WifiCredentials;
 /// Pixels per QR module in the generated PNG.
 const MODULE_SCALE: u32 = 8;
 
-/// Limits applied before decoding untrusted camera or extension images.
+/// Limits applied before decoding untrusted camera or uploaded images.
 const MAX_IMAGE_BYTES: u64 = 12 * 1024 * 1024;
 const MAX_IMAGE_DIMENSION: u32 = 8192;
 const MAX_IMAGE_PIXELS: u64 = 4 * 1024 * 1024;
@@ -34,9 +34,8 @@ fn build_matrix(payload: &str) -> Result<QrCode> {
 
 /// Build the `WIFI:` payload and render it to a base64 PNG in one step.
 ///
-/// This is the single shared "share" entry point used by the IPC host, the
-/// Tauri GUI, and any other frontend, so the QR/payload pair is built in one
-/// place.
+/// This is the shared "share" entry point used by every frontend, so the
+/// QR/payload pair is built in one place.
 pub fn credentials_to_qr(credentials: &WifiCredentials) -> Result<(String, String)> {
     let payload = build_payload(credentials);
     let png_base64 = to_png_base64(&payload)?;

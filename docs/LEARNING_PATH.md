@@ -217,7 +217,7 @@ You can explain why every frontend receives `&dyn WifiAdapter`.
 
 ## Chapter 7: Shared service layer
 
-Goal: learn how app features stay shared across CLI, TUI, GUI, and extension.
+Goal: learn how app features stay shared across CLI, TUI, and GUI.
 
 Read:
 
@@ -248,40 +248,7 @@ Checkpoint:
 
 You can trace "share current Wi-Fi" from a UI action to `share_current()`.
 
-## Chapter 8: Native Messaging IPC
-
-Goal: learn serde-tagged enums and browser-to-native protocol design.
-
-Read:
-
-- `crates/core/src/ipc.rs`
-- `crates/host/src/main.rs`
-- `docs/IPC_PROTOCOL.md`
-
-Learn:
-
-- `#[serde(tag = "command")]`
-- Request/response enums
-- Length-prefixed binary framing
-- `Read` and `Write` traits
-- Protocol tests
-
-Run:
-
-```sh
-cargo test -p qr-wifi-core ipc
-```
-
-Exercise:
-
-Add a request/response serialization test for one command you care about.
-
-Checkpoint:
-
-You can explain why the browser extension never runs `nmcli`, `netsh`, or
-`networksetup` directly.
-
-## Chapter 9: CLI frontend
+## Chapter 8: CLI frontend
 
 Goal: learn binary crates, argument parsing, and error presentation.
 
@@ -312,7 +279,7 @@ Checkpoint:
 
 You can explain why the CLI should not parse `WIFI:` payloads itself.
 
-## Chapter 10: TUI frontend
+## Chapter 9: TUI frontend
 
 Goal: learn terminal UI as a thin caller.
 
@@ -343,7 +310,7 @@ Checkpoint:
 
 You can explain why `qr-wifi` with no flags can reuse `qr-wifi-tui`.
 
-## Chapter 11: GUI and browser extension
+## Chapter 10: GUI
 
 Goal: learn integration boundaries.
 
@@ -351,13 +318,10 @@ Read:
 
 - `src-tauri/src/main.rs`
 - `frontend/main.js`
-- `extension/popup.js`
-- `extension/popup.html`
 
 Learn:
 
 - Tauri command wrappers
-- Browser Native Messaging
 - JSON protocol boundaries
 - Keeping JS as presentation, not business logic
 - CSS custom properties as shared design tokens
@@ -368,7 +332,6 @@ Run:
 
 ```sh
 cargo check -p qr-wifi-gui
-cargo run -p qr-wifi-host
 ```
 
 Exercise:
@@ -376,24 +339,22 @@ Exercise:
 Pick one frontend action and trace the core function it reaches. If the frontend
 duplicates core logic, move that logic into `qr-wifi-core`.
 
-Then change one monochrome design token in `frontend/styles.css` and the matching
-token in `extension/popup.html`. Confirm that appearance changes without touching
-Rust behavior.
+Then change one monochrome design token in `frontend/styles.css`. Confirm that
+appearance changes without touching Rust behavior.
 
 Checkpoint:
 
-You can explain how CLI, TUI, GUI, Chrome, and Firefox share the same features.
+You can explain how CLI, TUI, and GUI share the same features.
 You can also explain why themes stay in each frontend while Wi-Fi rules stay in
 `qr-wifi-core`.
 
-## Chapter 12: Packaging and install paths
+## Chapter 11: Packaging and install paths
 
 Goal: learn how Rust apps become installable tools.
 
 Read:
 
 - `README.md` install section
-- `scripts/install-native-host.sh`
 - `scripts/homebrew-formula.rb`
 - `src-tauri/tauri.conf.json`
 
@@ -401,7 +362,6 @@ Learn:
 
 - `cargo install`
 - Release binaries
-- Native Messaging manifest locations
 - Homebrew formula shape
 - Tauri installers
 
@@ -419,20 +379,18 @@ that path exactly.
 
 Checkpoint:
 
-You can explain the difference between installing the CLI, the GUI app, and the
-browser native host.
+You can explain the difference between installing the CLI, TUI, and GUI app.
 
 ## Feature map
 
 | Feature | Core function | Rust lesson | Frontends |
 | --- | --- | --- | --- |
-| List networks | `service::networks` | Sorting, traits, adapter boundary | CLI, TUI, GUI, extension |
-| Share current Wi-Fi | `service::share_current` | Composition, `Result`, fake tests | CLI, TUI, GUI, extension |
-| Share by SSID | `service::share_ssid` | Borrowed input, adapter lookup | CLI, TUI, extension |
-| Custom QR | `service::share_custom` | Structs, enums, QR rendering | CLI, TUI, GUI, extension |
-| Connect from payload | `service::connect_payload` | Parsing then side effects | CLI, TUI, GUI, extension |
-| Decode QR image | `service::decode_qr_base64` / `decode_qr_path` | Binary data, base64, images | CLI, GUI, extension |
-| Browser IPC | `ipc::handle_request` | Tagged enums, JSON, framing | Chrome, Firefox |
+| List networks | `service::networks` | Sorting, traits, adapter boundary | CLI, TUI, GUI |
+| Share current Wi-Fi | `service::share_current` | Composition, `Result`, fake tests | CLI, TUI, GUI |
+| Share by SSID | `service::share_ssid` | Borrowed input, adapter lookup | CLI, TUI |
+| Custom QR | `service::share_custom` | Structs, enums, QR rendering | CLI, TUI, GUI |
+| Connect from payload | `service::connect_payload` | Parsing then side effects | CLI, TUI, GUI |
+| Decode QR image | `service::decode_qr_base64` / `decode_qr_path` | Binary data, base64, images | CLI, GUI |
 
 ## Contribution rule for learners
 
@@ -447,7 +405,7 @@ When adding a feature:
 
 This keeps the repo maintainable and keeps the learning material honest.
 
-## Chapter 13: Security and release engineering
+## Chapter 12: Security and release engineering
 
 Goal: learn how local applications protect secrets and prove cross-platform
 behavior before release.
@@ -455,10 +413,8 @@ behavior before release.
 Read:
 
 - `docs/SECURITY.md`
-- `crates/core/src/platform/command.rs`
+- `crates/core/src/platform/macos.rs`
 - `crates/core/src/qr.rs`
-- `crates/host/tests/native_messaging.rs`
-- `scripts/install-native-host.sh`
 - `.github/workflows/ci.yml`
 
 Learn:
@@ -467,7 +423,6 @@ Learn:
 - Secret redaction without changing serialization
 - Resource limits for untrusted IPC and images
 - Process-level integration tests
-- Browser Native Messaging allowlists
 - CI test matrices and release artifacts
 - Difference between ad-hoc signing, trusted signing, and notarization
 
@@ -475,7 +430,6 @@ Run:
 
 ```sh
 cargo test --locked
-sh scripts/test-install-native-host.sh
 ```
 
 Exercise:

@@ -58,14 +58,13 @@ for valid_version in 0.0.1 1.2.3 65535.65535.65535; do
     fail "store-ready release rejected valid version: $valid_version"
 done
 
-# Exercise the real version-rewrite helper in isolation. This proves all three
+# Exercise the real version-rewrite helper in isolation. This proves both
 # source files change together without mutating the checkout under test.
 version_fixture=$(mktemp -d)
 trap 'rm -rf "$version_fixture"' EXIT
-mkdir -p "$version_fixture/src-tauri" "$version_fixture/extension"
+mkdir -p "$version_fixture/src-tauri"
 printf '[workspace.package]\nversion = "0.0.1"\n' >"$version_fixture/Cargo.toml"
 printf '{"version":"0.0.1"}\n' >"$version_fixture/src-tauri/tauri.conf.json"
-printf '{"manifest_version":3,"version":"0.0.1"}\n' >"$version_fixture/extension/manifest.json"
 python3 scripts/set-release-version.py 12.34.56 --root "$version_fixture"
 python3 - "$version_fixture" <<'PY' || fail "coordinated version rewrite failed"
 import json
@@ -78,13 +77,12 @@ cargo = root.joinpath("Cargo.toml").read_text()
 versions = {
     re.search(r'version = "([^"]+)"', cargo).group(1),
     json.loads(root.joinpath("src-tauri/tauri.conf.json").read_text())["version"],
-    json.loads(root.joinpath("extension/manifest.json").read_text())["version"],
 }
 if versions != {"12.34.56"}:
     raise SystemExit(f"unexpected rewritten versions: {versions}")
 PY
 
-python3 - <<'PY' || fail "workspace, Tauri, and extension versions must match"
+python3 - <<'PY' || fail "workspace and Tauri versions must match"
 import json
 import re
 from pathlib import Path
@@ -95,22 +93,18 @@ if match is None:
     raise SystemExit("workspace package version not found")
 workspace_version = match.group(1)
 tauri_version = json.loads(Path("src-tauri/tauri.conf.json").read_text())["version"]
-extension_version = json.loads(Path("extension/manifest.json").read_text())["version"]
-if len({workspace_version, tauri_version, extension_version}) != 1:
+if len({workspace_version, tauri_version}) != 1:
     raise SystemExit(
-        f"version drift: workspace={workspace_version}, tauri={tauri_version}, "
-        f"extension={extension_version}"
+        f"version drift: workspace={workspace_version}, tauri={tauri_version}"
     )
 PY
 
 grep -Fq 'python3 scripts/set-release-version.py "$version"' scripts/release-all.sh ||
   fail "release script must run the coordinated version helper"
-grep -Fq 'git add Cargo.toml Cargo.lock src-tauri/tauri.conf.json extension/manifest.json' scripts/release-all.sh ||
+grep -Fq 'git add Cargo.toml Cargo.lock src-tauri/tauri.conf.json' scripts/release-all.sh ||
   fail "release commit must stage every coordinated version file"
 
 for topic in \
-  'Chrome Web Store blueprint' \
-  'Firefox Add-ons (AMO) blueprint' \
   'WinGet' \
   'Microsoft Store' \
   'macOS signing, notarization, and Mac App Store' \
@@ -140,8 +134,7 @@ for package_pattern in \
   'qr-wifi-rs-desktop-${version}-${{ matrix.target }}-setup.exe' \
   'qr-wifi-rs-desktop-${version}-${{ matrix.target }}.msi' \
   'qr-wifi-rs-desktop-${version}-${{ matrix.target }}.app.zip' \
-  'qr-wifi-rs-desktop-${version}-${{ matrix.target }}.dmg' \
-  'qr-wifi-rs-browser-extension-${version}-unsigned.zip'; do
+  'qr-wifi-rs-desktop-${version}-${{ matrix.target }}.dmg'; do
   grep -Fq "$package_pattern" "$workflow" || fail "missing unique release filename: $package_pattern"
 done
 

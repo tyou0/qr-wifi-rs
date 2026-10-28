@@ -21,6 +21,10 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tiny_http = "0.12"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-core-location = { version = "0.3", default-features = false, features = ["std", "CLLocationManager"] }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = "2.0.2"
 

@@ -1,8 +1,8 @@
 //! High-level feature functions shared by every frontend.
 //!
 //! This module is the "application layer" of the crate: it combines the small
-//! pure helpers (`payload`, `qr`) with a [`WifiAdapter`] so CLI, TUI, GUI, and
-//! browser extension code call the same feature entry points.
+//! pure helpers (`payload`, `qr`) with a [`WifiAdapter`] so CLI, TUI, and GUI
+//! code call the same feature entry points.
 
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -224,6 +224,31 @@ mod tests {
         assert_eq!(actual, expected);
         assert_eq!(adapter.connected(), vec![expected]);
         assert_eq!(adapter.calls(), vec!["connect:Guest"]);
+    }
+
+    #[test]
+    fn connect_payload_rejects_invalid_input_before_calling_adapter() {
+        let adapter = FakeAdapter::new();
+
+        assert!(connect_payload(&adapter, "https://example.com").is_err());
+        assert!(adapter.calls().is_empty());
+        assert!(adapter.connected().is_empty());
+    }
+
+    #[test]
+    fn connect_credentials_passes_credentials_directly_to_adapter() {
+        let adapter = FakeAdapter::new();
+        let expected = WifiCredentials::new("Guest", WifiSecurity::Nopass).hidden(true);
+
+        connect_credentials(&adapter, &expected).unwrap();
+
+        assert_eq!(adapter.connected(), vec![expected]);
+        assert_eq!(adapter.calls(), vec!["connect:Guest"]);
+    }
+
+    #[test]
+    fn decode_qr_base64_rejects_invalid_image_data() {
+        assert!(decode_qr_base64("not valid base64!").is_err());
     }
 
     #[test]

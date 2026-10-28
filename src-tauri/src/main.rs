@@ -5,10 +5,11 @@
 //!
 //! The frontend is a small vanilla HTML/CSS/JS app (`../../frontend`). Every
 //! meaningful action is a Tauri command that delegates to [`qr_wifi_core`], so
-//! the GUI shares one implementation with the CLI, TUI, and the browser-host.
+//! the GUI shares one implementation with the CLI and TUI.
 
 mod command_names;
 mod media_capture;
+mod wifi_permission;
 
 use qr_wifi_core::{
     decode_image_base64, default_adapter, networks, parse_payload,
@@ -90,6 +91,11 @@ fn main() {
     let server = Server::from_listener(listener, None).expect("failed to start UI server");
 
     tauri::Builder::default()
+        .on_window_event(|_, event| {
+            if matches!(event, tauri::WindowEvent::Focused(true)) {
+                wifi_permission::request();
+            }
+        })
         .setup(move |app| {
             let asset_resolver = app.asset_resolver();
             std::thread::Builder::new()

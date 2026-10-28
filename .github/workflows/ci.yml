@@ -78,11 +78,11 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends network-manager dbus
 
-      - name: Test real NetworkManager credential retrieval without Wi-Fi hardware
+      - name: Test native NetworkManager profiles and connection completion
         run: bash scripts/test-linux-nmcli.sh
 
   packaging:
-    name: Packaging and extension checks
+    name: Packaging checks
     runs-on: ubuntu-latest
 
     steps:
@@ -102,15 +102,6 @@ jobs:
         run: |
           ruby -c Formula/qr-wifi-rs.rb
           ruby -c scripts/homebrew-formula.rb
-
-      - name: Test native host installer
-        run: |
-          sh -n scripts/install-native-host.sh
-          sh -n scripts/test-install-native-host.sh
-          sh scripts/test-install-native-host.sh
-
-      - name: Lint Chrome and Firefox extension
-        run: npx --yes web-ext@8.10.0 lint --source-dir extension --warnings-as-errors
 
   dependency-audit:
     name: Rust dependency audit
