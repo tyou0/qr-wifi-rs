@@ -161,12 +161,16 @@ function element(selector) {
       textContent: "",
       value: "",
       dataset: {},
+      children: [],
       classList: {
         add: (name) => classes.add(name),
         remove: (name) => classes.delete(name),
         contains: (name) => classes.has(name),
+        toggle: (name, enabled) => enabled ? classes.add(name) : classes.delete(name),
       },
-      addEventListener() {},
+      listeners: {},
+      addEventListener(name, listener) { this.listeners[name] = listener; },
+      append(child) { this.children.push(child); },
       getContext: () => ({}),
     });
   }
@@ -181,6 +185,13 @@ element("#scan-video").play = () => {
     : Promise.reject(new Error("Hidden video cannot start playback in WebKitGTK"));
 };
 const startupStream = { getTracks: () => [{ stop: () => { stoppedTracks += 1; } }] };
+const fixtureNetwork = { ssid: "  Fixture Wi-Fi  ", security: "WPA2", hidden: true };
+let finishNetworkList;
+let scanRequests = 0;
+let sharedCredentials;
+let openedCustom = false;
+element('.tab-btn[data-tab="custom"]').click = () => { openedCustom = true; };
+element("#custom-password").focus = () => {};
 const context = createContext({
   cameraCaptureDimensions,
   cameraErrorMessage,
@@ -193,23 +204,61 @@ const context = createContext({
   document: {
     querySelector: element,
     querySelectorAll: () => [],
-    createElement: element,
+    createElement: (tag) => element(Symbol(tag)),
   },
   navigator: {
     userAgent: "Linux",
     mediaDevices: { getUserMedia: async () => startupStream },
   },
   window: {
-    __TAURI__: { core: { invoke: async (command) => {
-      assert.equal(command, "list_networks", "startup must not connect to Wi-Fi");
-      return [];
+    __TAURI__: { core: { invoke: async (command, args) => {
+      switch (command) {
+        case "list_networks":
+          scanRequests += 1;
+          return new Promise((resolve) => { finishNetworkList = resolve; });
+        case "get_active_ssid":
+          return fixtureNetwork.ssid;
+        case "get_credentials":
+          assert.equal(args.ssid, fixtureNetwork.ssid);
+          return { ...fixtureNetwork };
+        case "share_custom":
+          sharedCredentials = args.credentials;
+          return { payload: "fixture-payload", png_base64: "fixture-image" };
+        default:
+          assert.fail(`unexpected Tauri command ${command}`);
+      }
     } } },
     addEventListener() {},
   },
   setTimeout: () => 1, // Do not start a capture loop in the startup test.
   clearTimeout() {},
 });
-runInContext(main.replace(/^import[\s\S]*?from "[^"]+";\n/gm, ""), context);
+runInContext(main.replace(/^import[\s\S]*?from "[^"]+";\r?\n/gm, ""), context);
+assert.equal(element("#refresh-networks").disabled, true, "disable refresh during the scan");
+await runInContext("refreshNetworks()", context);
+assert.equal(scanRequests, 1, "a pending scan suppresses repeat requests");
+finishNetworkList([{ ssid: fixtureNetwork.ssid, active: true }, { ssid: "Nearby Wi-Fi" }]);
+await new Promise(setImmediate);
+assert.equal(element("#refresh-networks").disabled, false, "reenable refresh after the scan");
+assert.deepEqual(
+  element("#network-list").children.map((button) => button.textContent),
+  ["* " + fixtureNetwork.ssid, "Nearby Wi-Fi"],
+  "show both the active network and nearby networks",
+);
+
+await element("#share-current").listeners.click();
+assert.equal(sharedCredentials, undefined, "a secured profile with no readable key emits no QR");
+assert.equal(openedCustom, true, "the password form opens when the saved key is unavailable");
+assert.equal(element("#custom-ssid").value, fixtureNetwork.ssid, "keep the exact SSID");
+assert.equal(element("#custom-security").value, fixtureNetwork.security);
+assert.equal(element("#custom-hidden").checked, true);
+assert.equal(element("#custom-password").required, true);
+element("#custom-password").value = "fixture-password";
+await element("#custom-form").listeners.submit({ preventDefault() {} });
+assert.equal(sharedCredentials.ssid, fixtureNetwork.ssid);
+assert.equal(sharedCredentials.password, "fixture-password");
+assert.equal(element("#modal-payload").textContent, "fixture-payload");
+
 await runInContext("startScanning()", context);
 assert.equal(visibleWhenPlaybackRequested, true, "show the camera before requesting playback");
 assert.equal(element("#status").textContent, "Scanning for QR code");

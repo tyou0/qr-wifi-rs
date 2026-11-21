@@ -33,8 +33,12 @@ const toggleConsole = $("#toggle-console");
 const status = $("#status");
 const networkList = $("#network-list");
 const networkSearch = $("#network-search");
+const refreshButton = $("#refresh-networks");
 const securityInput = $("#custom-security");
 const passwordGroup = $("#password-group");
+const customSsid = $("#custom-ssid");
+const customPassword = $("#custom-password");
+const customHidden = $("#custom-hidden");
 
 const qrModal = $("#qr-modal");
 const qrImage = $("#qr-image");
@@ -114,10 +118,13 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
   });
 });
 
-securityInput.addEventListener("change", () => {
-  const open = securityInput.value === "nopass";
-  passwordGroup.classList.toggle("hidden", open);
-});
+function updatePasswordField() {
+  const required = securityInput.value !== "nopass";
+  passwordGroup.classList.toggle("hidden", !required);
+  customPassword.required = required;
+}
+securityInput.addEventListener("change", updatePasswordField);
+updatePasswordField();
 
 function fuzzyMatch(text, query) {
   const t = text.toLowerCase();
@@ -127,6 +134,28 @@ function fuzzyMatch(text, query) {
   }
   return idx === query.length;
 }
+
+async function shareSavedNetwork(ssid) {
+  setStatus(`Building QR for ${ssid}...`, "loading");
+  const credentials = await invoke("get_credentials", { ssid });
+  if (credentials.security !== "nopass" && !credentials.password) {
+    customSsid.value = credentials.ssid;
+    securityInput.value = credentials.security;
+    customHidden.checked = credentials.hidden;
+    customPassword.value = "";
+    updatePasswordField();
+    $('.tab-btn[data-tab="custom"]').click();
+    setStatus("Saved password unavailable. Enter the Wi-Fi password.", "error");
+    customPassword.focus();
+    return;
+  }
+
+  const result = await invoke("share_custom", { credentials });
+  await showQr(result, `SSID: ${credentials.ssid} · ${credentials.security}${credentials.hidden ? " (Hidden)" : ""}`);
+  print(`QR for ${ssid}.`);
+  setStatus("Done", "success");
+}
+
 function renderNetworks(networks) {
   networkList.innerHTML = "";
   if (networks.length === 0) {
@@ -138,18 +167,7 @@ function renderNetworks(networks) {
     button.type = "button";
     button.className = "network-card";
     button.textContent = network.active ? `* ${network.ssid}` : network.ssid;
-    button.addEventListener("click", async () => {
-      setStatus(`Building QR for ${network.ssid}...`, "loading");
-      try {
-        const credentials = await invoke("get_credentials", { ssid: network.ssid });
-        const result = await invoke("share_custom", { credentials });
-        await showQr(result, `SSID: ${credentials.ssid} · ${credentials.security}${credentials.hidden ? " (Hidden)" : ""}`);
-        print(`QR for ${network.ssid}.`);
-        setStatus("Done", "success");
-      } catch (error) {
-        handleError(error);
-      }
-    });
+    button.addEventListener("click", () => shareSavedNetwork(network.ssid).catch(handleError));
     networkList.append(button);
   }
 }
@@ -161,17 +179,17 @@ networkSearch.addEventListener("input", () => {
 $("#share-current").addEventListener("click", async () => {
   setStatus("Detecting current Wi-Fi...", "loading");
   try {
-    const result = await invoke("share_current");
-    await showQr(result);
-    print(`QR for current network.`);
-    setStatus("Done", "success");
+    const ssid = await invoke("get_active_ssid");
+    await shareSavedNetwork(ssid);
   } catch (error) {
     handleError(error);
   }
 });
 
 async function refreshNetworks() {
-  setStatus("Loading networks...", "loading");
+  if (refreshButton.disabled) return;
+  refreshButton.disabled = true;
+  setStatus("Scanning for Wi-Fi networks...", "loading");
   try {
     networkSearch.value = "";
     allNetworks = await invoke("list_networks");
@@ -179,17 +197,19 @@ async function refreshNetworks() {
     setStatus(`${allNetworks.length} network(s) loaded`, "success");
   } catch (error) {
     handleError(error, true);
+  } finally {
+    refreshButton.disabled = false;
   }
 }
-$("#refresh-networks").addEventListener("click", refreshNetworks);
+refreshButton.addEventListener("click", refreshNetworks);
 
 $("#custom-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   setStatus("Generating custom QR...", "loading");
-  const ssid = $("#custom-ssid").value.trim();
+  const ssid = customSsid.value;
   const security = securityInput.value;
-  const password = $("#custom-password").value;
-  const hidden = $("#custom-hidden").checked;
+  const password = customPassword.value;
+  const hidden = customHidden.checked;
   if (!ssid) {
     setStatus("SSID is required", "error");
     return;
