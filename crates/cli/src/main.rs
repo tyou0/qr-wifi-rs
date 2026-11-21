@@ -33,7 +33,7 @@ struct Cli {
     #[arg(long, value_name = "SSID")]
     ssid: Option<String>,
 
-    /// Build a custom QR (requires --ssid; --password optional).
+    /// Build a custom QR (requires --ssid and a --password for secured networks).
     #[arg(long)]
     custom: bool,
 

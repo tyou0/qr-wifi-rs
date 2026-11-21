@@ -159,6 +159,8 @@ Build Tools with **Desktop development with C++** (including the Windows SDK).
 Wi-Fi detection/listing on recent Windows versions may require **Location
 services** and **desktop-app location access** in Settings > Privacy & security
 > Location. Saved passwords remain subject to Windows policy and user permissions.
+If Windows withholds a saved password, the desktop app fills in the network
+details and prompts you to enter its password before generating a QR code.
 
 ### Homebrew
 
@@ -479,7 +481,7 @@ Passwords stay in memory and are never passed through command arguments.
 | ------- | ------------------------ | ------------------------------------ | -------------------------------- | -------------------------------- |
 | macOS | CoreWLAN live interface | CoreWLAN scan | CoreWLAN Keychain API | CoreWLAN association + verification |
 | Linux   | NetworkManager D-Bus    | NetworkManager access-point objects | NetworkManager settings/secrets | NetworkManager activation API    |
-| Windows | Native Wi-Fi query       | Native Wi-Fi available-network list | Native Wi-Fi profile XML        | Native Wi-Fi profile + connect   |
+| Windows | Native Wi-Fi query       | Native Wi-Fi scan and available-network list | Native Wi-Fi profile XML        | Native Wi-Fi profile + connect   |
 
 Linux requires NetworkManager managing the wireless interface. Saved profiles
 are resolved by their SSID bytes, including renamed profiles; punctuation,

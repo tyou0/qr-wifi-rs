@@ -10,7 +10,7 @@ use std::path::Path;
 use crate::platform::WifiAdapter;
 use crate::qr::{credentials_to_qr, decode_image_base64, decode_image_path};
 use crate::types::{sort_networks, WifiCredentials, WifiNetwork};
-use crate::{parse_payload, Result};
+use crate::{parse_payload, CoreError, Result};
 
 /// A shareable Wi-Fi QR result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,7 +47,15 @@ pub fn share_ssid(adapter: &dyn WifiAdapter, ssid: &str) -> Result<QrShare> {
 }
 
 /// Build a QR from explicit credentials.
+/// Secured networks require a nonempty password.
 pub fn share_custom(credentials: &WifiCredentials) -> Result<QrShare> {
+    if credentials.security.requires_password()
+        && credentials.password.as_deref().is_none_or(str::is_empty)
+    {
+        return Err(CoreError::Payload(
+            "Enter the Wi-Fi password to generate a QR code for this secured network.".into(),
+        ));
+    }
     let (payload, png_base64) = credentials_to_qr(credentials)?;
     Ok(QrShare {
         payload,
@@ -209,6 +217,19 @@ mod tests {
 
         assert_share_matches(&share, &expected);
         assert_eq!(adapter.calls(), vec!["credentials:Cafe"]);
+    }
+
+    #[test]
+    fn sharing_requires_a_password_only_for_secured_networks() {
+        let secured = WifiCredentials::new("Home", WifiSecurity::Wpa2);
+        assert!(matches!(share_custom(&secured), Err(CoreError::Payload(_))));
+        assert!(matches!(
+            share_custom(&secured.with_password("")),
+            Err(CoreError::Payload(_))
+        ));
+
+        let open = WifiCredentials::new("Guest", WifiSecurity::Nopass);
+        assert_share_matches(&share_custom(&open).unwrap(), &open);
     }
 
     #[test]
